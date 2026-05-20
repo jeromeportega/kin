@@ -11,14 +11,18 @@ def sender_matches(addr: str, allowlist: list[str]) -> bool:
     """True if `addr` matches an entry in `allowlist`.
 
     Entries are either exact addresses (`admin@example.com`) or domain
-    suffixes (`@example.com` matches anything @example.com).
+    suffixes starting with `@`. A suffix matches the named domain *and*
+    any subdomain — `@example.com` matches `x@example.com` and
+    `x@notify.example.com`.
     """
     addr = addr.strip().lower()
-    if not addr:
+    if not addr or "@" not in addr:
         return False
+    _, _, domain = addr.rpartition("@")
     for entry in allowlist:
         if entry.startswith("@"):
-            if addr.endswith(entry):
+            target = entry[1:]
+            if domain == target or domain.endswith("." + target):
                 return True
         elif addr == entry:
             return True

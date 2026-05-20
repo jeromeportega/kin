@@ -5,7 +5,8 @@
 
 # Senders whose mail should always be classified.
 # Full address: "admin@sunshinedaycare.example"
-# Whole domain:  "@delta.com"  (matches anything at delta.com)
+# Whole domain:  "@delta.com"  (matches anything @delta.com OR @*.delta.com,
+#                e.g. matches alerts@notify.delta.com)
 sender_allowlist = [
     "admin@sunshinedaycare.example",
     "@delta.com",

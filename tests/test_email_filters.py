@@ -33,6 +33,15 @@ def test_sender_matches_domain_suffix():
     assert sender_matches("noreply@delta.com", ["@delta.com"])
 
 
+def test_sender_matches_subdomain():
+    assert sender_matches("alerts@notify.delta.com", ["@delta.com"])
+
+
+def test_sender_matches_subdomain_does_not_match_unrelated_suffix():
+    # @delta.com must NOT match foo@evildelta.com
+    assert not sender_matches("foo@evildelta.com", ["@delta.com"])
+
+
 def test_sender_matches_is_case_insensitive():
     assert sender_matches("Admin@Daycare.Example", ["admin@daycare.example"])
 
