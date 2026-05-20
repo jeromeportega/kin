@@ -1,5 +1,6 @@
 .venv/
 .env
+kin.toml
 __pycache__/
 *.pyc
 *.pyo
@@ -9,3 +10,5 @@ data/*.sqlite
 data/inbox/
 .idea/
 .vscode/
+triage.jsonl
+runs/

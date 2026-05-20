@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import sys
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from app.schemas.email import EmailClassification
 
 MODEL = "qwen3:14b"
 PROMPT_PATH = Path(__file__).parent / "prompts" / "classify.txt"
+PROMPT_VERSION = hashlib.sha256(PROMPT_PATH.read_bytes()).hexdigest()[:12]
 
 
 def classify(email_text: str, model: str = MODEL) -> EmailClassification:
