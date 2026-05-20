@@ -1,0 +1,15 @@
+From: Riverside Pediatrics <noreply@riversidepeds.example>
+To: Jerome Ortega <jeromeportega@gmail.com>
+Subject: Mia's lab results are ready in the patient portal
+Date: Tue, 19 May 2026 14:02:11 -0400
+
+Hello,
+
+Mia's recent lab results have been posted to the patient portal. Dr. Nguyen
+has reviewed them and noted everything looks normal.
+
+If you have any questions, please reply or call the office at (555) 010-2244.
+
+No action is required at this time.
+
+Riverside Pediatrics

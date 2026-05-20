@@ -1,0 +1,14 @@
+From: TLDR Newsletter <dan@tldrnewsletter.com>
+To: Jerome Ortega <jeromeportega@gmail.com>
+Subject: 📰 OpenAI's new model, Meta layoffs, AWS price cuts
+Date: Mon, 18 May 2026 06:02:13 -0500
+
+Good morning! Here's what's happening in tech today.
+
+🚀 OpenAI announced a new reasoning model
+📉 Meta cut another 5% of staff
+💸 AWS dropped EC2 prices by 12%
+
+Read the full stories on tldrnewsletter.com.
+
+Unsubscribe | Manage preferences
