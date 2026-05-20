@@ -1,0 +1,43 @@
+From: calendar-notification@google.com
+Subject: Notification: Appointment at FUTURE HYUNDAI OF CONCORD @ Wed Apr 22,
+ 2026 8:30am (PDT) (Parent Smith)
+Date: 2026-04-22T15:00:06+00:00
+
+You have an upcoming event
+
+Appointment at FUTURE HYUNDAI OF CONCORD
+Wednesday Apr 22, 2026 ⋅ 8:30am
+Pacific Time - Los Angeles
+
+Location
+FUTURE HYUNDAI OF CONCORD, 4901 MARSH DR, CONCORD, California, 94520	
+https://www.google.com/maps/search/FUTURE+HYUNDAI+OF+CONCORD,+4901+MARSH+DR,+CONCORD,+California,+94520?hl=en
+
+
+
+Organizer
+Parent Smith
+you@example.com
+
+Guests
+Parent Smith - organizer
+View all event details  
+https://calendar.google.com/calendar/event?action=VIEW&eid=aWlicmRtbzg2NjRzNzJsaWU0Z25ocTQ4czgganBvcnRlZ2E4N0Bt&tok=MjAjanBvcnRlZ2E4N0BnbWFpbC5jb201ODdlZGU0NDYyNTQ4YmVmOWM0Y2U3NzYxZTRjZTQ2OGU4NjUyNjdk&ctz=America%2FLos_Angeles&hl=en&es=1
+
+Reply for you@example.com and view more details  
+https://calendar.google.com/calendar/event?action=VIEW&eid=aWlicmRtbzg2NjRzNzJsaWU0Z25ocTQ4czgganBvcnRlZ2E4N0Bt&tok=MjAjanBvcnRlZ2E4N0BnbWFpbC5jb201ODdlZGU0NDYyNTQ4YmVmOWM0Y2U3NzYxZTRjZTQ2OGU4NjUyNjdk&ctz=America%2FLos_Angeles&hl=en&es=1
+Your attendance is optional.
+
+~~//~~
+Invitation from Google Calendar: https://calendar.google.com/calendar/
+
+You are receiving this email because you are subscribed to calendar  
+notifications. To stop receiving these emails, go to  
+https://calendar.google.com/calendar/r/settings, select this calendar, and  
+change "Other notifications".
+
+Forwarding this invitation could allow any recipient to send a response to  
+the organizer, be added to the guest list, invite others regardless of  
+their own invitation status, or modify your RSVP.
+
+Learn more https://support.google.com/calendar/answer/37135#forwarding

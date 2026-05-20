@@ -1,0 +1,93 @@
+From: connect-notification@online.procaresoftware.com
+Subject: Come Join Our Sports Enrichment Class!
+Date: 2026-04-24T15:16:18+00:00
+
+Newsletter
+
+html {
+margin: 0;
+padding: 0;
+font-family: 'Trebuchet MS', Arial, sans-serif !important;
+font-size: 14px;
+width: 100% !important;
+}
+
+body {
+margin: 0;
+padding: 0;
+font-family: 'Trebuchet MS', Arial, sans-serif !important;
+font-size: 14px;
+width: 100% !important;
+height: 100% !important;
+}
+
+td {
+font-family: 'Trebuchet MS', Arial, sans-serif !important;
+}
+
+.nc-wrapper {
+width: 100% !important;
+height: 100% !important;
+background-attachment: fixed;
+}
+
+.nc-wrapper__inner {
+padding: 20px;
+vertical-align: top;
+}
+
+.nc-bg {
+width: 100% !important;
+height: 100% !important;
+background-color: #eee;
+}
+
+.nc-layouts{width:100% !important;border-radius:0 0 6px
+6px}.nc-layouts__inner{padding:20px;background-color:#fff;border-radius:0
+0 6px
+6px}.nc-layouts__inner>table>tr>td{padding-bottom:10px}.nc-heading-layout{width:100%
+!important}.nc-heading-layout__heading{display:inline-block;font-size:20px;font-weight:bold;line-height:20px;padding-top:10px;padding-bottom:10px;position:relative}.nc-heading-layout__edit-btn{opacity:0;position:absolute;top:-5px;right:-24px;bottom:0;margin:auto;width:14px;height:14px}.nc-heading-layout:hover
+.nc-heading-layout__edit-btn{opacity:1}
+.nc-image-layout{height:304px}.nc-image-layout
+.nc-image-view,.nc-image-layout .nc-image-upload{height:100%}
+.nc-image-text-layout{width:100%
+!important}.nc-image-text-layout__image,.nc-image-text-layout__text{position:relative}.nc-image-text-layout__image{height:304px}.nc-image-text-layout__image
+.nc-image-view,.nc-image-text-layout__image
+.nc-image-view__img{height:304px}.nc-image-text-layout--h-ltr
+.nc-image-text-layout__image,.nc-image-text-layout--h-rtl
+.nc-image-text-layout__image{vertical-align:top}.nc-image-text-layout--h-ltr
+.nc-image-text-layout__image,.nc-image-text-layout--h-ltr
+.nc-image-text-layout__image img,.nc-image-text-layout--h-rtl
+.nc-image-text-layout__image,.nc-image-text-layout--h-rtl
+.nc-image-text-layout__image
+img{width:304px}.nc-image-text-layout--h-ltr
+.nc-image-text-layout__text,.nc-image-text-layout--h-rtl
+.nc-image-text-layout__text{vertical-align:top}.nc-image-text-layout--h-ltr
+.nc-image-text-layout__text
+.nc-text-view__text,.nc-image-text-layout--h-rtl
+.nc-image-text-layout__text
+.nc-text-view__text{padding-top:0}.nc-image-text-layout--h-ltr
+.nc-image-text-layout__text{border-left:5px solid
+#fff}.nc-image-text-layout--h-ltr
+.nc-image-text-layout__image{border-right:5px solid
+#fff}.nc-image-text-layout--h-rtl
+.nc-image-text-layout__text{border-right:5px solid
+#fff}.nc-image-text-layout--h-rtl
+.nc-image-text-layout__image{border-left:5px solid
+#fff}.nc-image-text-layout--h-s
+.nc-image-view,.nc-image-text-layout--h-s .nc-image-view
+img{height:304px}.nc-image-text-layout--h-l
+.nc-image-text-layout__image,.nc-image-text-layout--h-l
+.nc-image-text-layout__image img,.nc-image-text-layout--h-l
+.nc-image-view,.nc-image-text-layout--h-l .nc-image-view
+img{height:546px}
+.nc-image-text-layout-2c{width:100%
+!important}.nc-image-text-layout-2c__col1,.nc-image-text-layout-2c__col2{width:50%;vertical-align:top}.nc-image-text-layout-2c__col1>table,.nc-image-text-layout-2c__col2>table{width:100%
+!important}.nc-image-text-layout-2c__col1{width:268px;padding-right:5px}.nc-image-text-layout-2c__col2{padding-left:5px}.nc-image-text-layout-2c__col1-text,.nc-image-text-layout-2c__col2-text{width:268px}.nc-image-text-layout-2c__col1-image,.nc-image-text-layout-2c__col2-image,.nc-image-text-layout-2c__col1-text,.nc-image-text-layout-2c__col2-text{position:relative}.nc-image-text-layout-2c__col1-image,.nc-image-text-layout-2c__col2-image{height:304px}.nc-image-text-layout-2c__col1-image
+.nc-image-view,.nc-image-text-layout-2c__col1-image
+.nc-image-view img,.nc-image-text-layout-2c__col2-image
+.nc-image-view,.nc-image-text-layout-2c__col2-image
+.nc-image-view img{width:268px;height:304px}
+.nc-mosaic3-layout{width:100%
+!important;margin-top:10px}.nc-mosaic3-layout
+td{height:
