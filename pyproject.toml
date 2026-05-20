@@ -1,0 +1,10 @@
+[project]
+name = "kin"
+version = "0.1.0"
+description = "Local-first AI for personal and family workflows."
+requires-python = ">=3.11"
+dependencies = [
+    "ollama>=0.4.0",
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+]
