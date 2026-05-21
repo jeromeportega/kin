@@ -8,10 +8,12 @@ dependencies = [
     "ollama>=0.4.0",
     "pydantic>=2.7",
     "python-dotenv>=1.0",
+    "pyyaml>=6",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8",
     "hypothesis>=6",
+    "icalendar>=5",
 ]
