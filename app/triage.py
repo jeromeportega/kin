@@ -26,20 +26,22 @@ from typing import IO
 from dotenv import load_dotenv
 
 from app import db
+from app.cli_common import args_for_persistence, resolve_db_path, setup_logging
 from app.classify_email import MODEL, PROMPT_VERSION, classify
 from app.config import load_config
 from app.email_filters import should_classify
 from app.email_source import FetchedEmail
+from app.exit_codes import (
+    EXIT_CONFIG,
+    EXIT_DB,
+    EXIT_IMAP,
+    EXIT_MODEL,
+    EXIT_OK,
+    EXIT_UNEXPECTED,
+)
 from app.imap_source import IMAPSource
 
 logger = logging.getLogger("kin.triage")
-
-EXIT_OK = 0
-EXIT_UNEXPECTED = 1
-EXIT_CONFIG = 2
-EXIT_IMAP = 3
-EXIT_MODEL = 4
-EXIT_DB = 5
 
 
 def _utcnow() -> datetime:
@@ -71,14 +73,6 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _setup_logging() -> None:
-    logging.basicConfig(
-        level=os.environ.get("KIN_LOG_LEVEL", "INFO"),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        stream=sys.stderr,
-    )
-
-
 def _render_for_model(msg: FetchedEmail) -> str:
     """Concatenate headers + body into the plain-text shape the classifier expects."""
     lines = [
@@ -104,20 +98,8 @@ def _emit(record: dict, extra: IO[str] | None) -> None:
         extra.flush()
 
 
-def _resolve_db_path() -> Path:
-    env_path = os.environ.get("KIN_DB_PATH")
-    if env_path:
-        return Path(env_path)
-    return Path("data") / "kin.sqlite"
-
-
-def _args_for_persistence(args: argparse.Namespace) -> dict:
-    """Return a JSON-safe snapshot of CLI args for the runs.args column."""
-    return {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()}
-
-
 def main() -> int:  # noqa: C901 — orchestrator, intentionally linear
-    _setup_logging()
+    setup_logging()
     args = _build_parser().parse_args()
 
     load_dotenv()
@@ -145,7 +127,7 @@ def main() -> int:  # noqa: C901 — orchestrator, intentionally linear
     # DB connection — open before anything mutates state.
     conn: sqlite3.Connection | None = None
     if not args.no_db:
-        db_path = _resolve_db_path()
+        db_path = resolve_db_path()
         try:
             db_path.parent.mkdir(parents=True, exist_ok=True)
             conn = db.connect(db_path)
@@ -180,7 +162,7 @@ def main() -> int:  # noqa: C901 — orchestrator, intentionally linear
                     run_id = db.start_run(
                         conn,
                         user_id=args.user,
-                        args=_args_for_persistence(args),
+                        args=args_for_persistence(args),
                         model=args.model,
                         prompt_version=PROMPT_VERSION,
                         hours=args.hours,
