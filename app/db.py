@@ -527,6 +527,55 @@ def fetch_classifications_window(
     ]
 
 
+def fetch_latest_digest_json(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    window_hours: int | None = 24,
+) -> str | None:
+    """Return the `json_payload` of the most recent digest for `user_id`.
+
+    By default filters to `window_hours = 24` — the "daily digest" intent.
+    Without this filter, a forensic `app.digest --hours 720` would silently
+    become "the latest digest" and sync would write a month of mail into
+    today's daily-note. Pass `window_hours=None` to override (forensics).
+    """
+    if window_hours is None:
+        row = conn.execute(
+            """
+            SELECT json_payload FROM digests
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            """
+            SELECT json_payload FROM digests
+            WHERE user_id = ? AND window_hours = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (user_id, window_hours),
+        ).fetchone()
+    return row["json_payload"] if row else None
+
+
+def fetch_digest_json(
+    conn: sqlite3.Connection,
+    *,
+    digest_id: int,
+) -> str | None:
+    """Return the `json_payload` of digest `digest_id`, or None if missing."""
+    row = conn.execute(
+        "SELECT json_payload FROM digests WHERE id = ?",
+        (digest_id,),
+    ).fetchone()
+    return row["json_payload"] if row else None
+
+
 def insert_digest(
     conn: sqlite3.Connection,
     *,

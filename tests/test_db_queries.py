@@ -6,11 +6,14 @@ import pytest
 
 from app.db import (
     fetch_classifications_window,
+    fetch_digest_json,
+    fetch_latest_digest_json,
     insert_classification,
     insert_classification_error,
     insert_digest,
     upsert_email,
 )
+from tests.conftest import seed_digest
 from app.email_source import FetchedEmail
 from app.schemas.email import Category, EmailClassification, Priority
 
@@ -283,3 +286,56 @@ def test_insert_digest_duplicate_position_rejected_by_constraint(mem_db):
             (digest_id, cls_id, 0),
         )
         mem_db.commit()
+
+
+# --- fetch_latest_digest_json / fetch_digest_json ---------------------------
+
+def test_fetch_latest_digest_json_returns_none_on_empty(mem_db):
+    assert fetch_latest_digest_json(mem_db, user_id="jerome") is None
+
+
+def test_fetch_latest_digest_json_returns_newest(mem_db):
+    seed_digest(mem_db, generated_at=T0, json_payload='{"id":1}')
+    seed_digest(mem_db, generated_at=T1, json_payload='{"id":2}')
+    seed_digest(mem_db, generated_at=T2, json_payload='{"id":3}')
+    payload = fetch_latest_digest_json(mem_db, user_id="jerome")
+    assert payload == '{"id":3}'
+
+
+def test_fetch_latest_digest_json_default_filters_to_window_24(mem_db):
+    seed_digest(mem_db, generated_at=T0, window_hours=720, json_payload='{"forensic":true}')
+    seed_digest(mem_db, generated_at=T1, window_hours=24, json_payload='{"daily":true}')
+    payload = fetch_latest_digest_json(mem_db, user_id="jerome")
+    assert payload == '{"daily":true}'
+
+
+def test_fetch_latest_digest_json_none_returns_latest_any_window(mem_db):
+    seed_digest(mem_db, generated_at=T0, window_hours=24, json_payload='{"daily":true}')
+    seed_digest(mem_db, generated_at=T1, window_hours=720, json_payload='{"forensic":true}')
+    payload = fetch_latest_digest_json(mem_db, user_id="jerome", window_hours=None)
+    assert payload == '{"forensic":true}'
+
+
+def test_fetch_latest_digest_json_filters_by_user(mem_db):
+    seed_digest(mem_db, user_id="jerome", generated_at=T0, json_payload='{"j":true}')
+    seed_digest(mem_db, user_id="partner", generated_at=T1, json_payload='{"p":true}')
+    assert fetch_latest_digest_json(mem_db, user_id="jerome") == '{"j":true}'
+    assert fetch_latest_digest_json(mem_db, user_id="partner") == '{"p":true}'
+
+
+def test_fetch_digest_json_by_id(mem_db):
+    did = seed_digest(mem_db, generated_at=T0, json_payload='{"specific":true}')
+    assert fetch_digest_json(mem_db, digest_id=did) == '{"specific":true}'
+
+
+def test_fetch_digest_json_missing_returns_none(mem_db):
+    assert fetch_digest_json(mem_db, digest_id=9999) is None
+
+
+def test_fetch_digest_json_returns_old_digest_regardless_of_window(mem_db):
+    # A forensic digest is fetchable by id even though fetch_latest filters to 24
+    forensic_id = seed_digest(mem_db, generated_at=T0, window_hours=720,
+                              json_payload='{"f":1}')
+    seed_digest(mem_db, generated_at=T1, window_hours=24,
+                json_payload='{"d":1}')
+    assert fetch_digest_json(mem_db, digest_id=forensic_id) == '{"f":1}'
