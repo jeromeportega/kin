@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -15,6 +16,8 @@ from app.db import (
 )
 from app.email_source import FetchedEmail
 from app.schemas.email import Category, EmailClassification, Priority
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 NOW = datetime(2026, 5, 20, 14, 0, 0, tzinfo=timezone.utc)
@@ -68,8 +71,86 @@ def test_init_schema_seeds_meta_version(mem_db):
 def test_init_schema_raises_on_version_mismatch(mem_db):
     mem_db.execute("UPDATE _meta SET value = '99' WHERE key = 'schema_version'")
     mem_db.commit()
-    with pytest.raises(RuntimeError, match="schema_version"):
+    with pytest.raises(RuntimeError, match="no migration path"):
         init_schema(mem_db)
+
+
+# --- migrations --------------------------------------------------------------
+
+def _load_v1_db() -> sqlite3.Connection:
+    """A fresh in-memory DB loaded with the snapshotted v1 schema."""
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    v1_sql = (FIXTURES / "schema_v1.sql").read_text()
+    conn.executescript(v1_sql)
+    conn.execute("INSERT INTO _meta (key, value) VALUES ('schema_version', '1')")
+    conn.commit()
+    return conn
+
+
+def test_v1_to_v2_migration_adds_digest_tables():
+    conn = _load_v1_db()
+    # Sanity: v1 tables exist, v2 don't yet
+    tables = {
+        r["name"]
+        for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    assert {"emails", "runs", "classifications"} <= tables
+    assert "digests" not in tables
+    assert "digest_items" not in tables
+
+    init_schema(conn)
+
+    # Version bumped
+    row = conn.execute(
+        "SELECT value FROM _meta WHERE key = 'schema_version'"
+    ).fetchone()
+    assert row["value"] == SCHEMA_VERSION  # "2"
+
+    # New tables present
+    tables = {
+        r["name"]
+        for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    assert "digests" in tables
+    assert "digest_items" in tables
+
+    # Old tables still present
+    assert {"emails", "runs", "classifications"} <= tables
+
+    conn.close()
+
+
+def test_v1_to_v2_migration_preserves_existing_data():
+    conn = _load_v1_db()
+    # Seed a v1 email + classification
+    conn.execute(
+        """INSERT INTO emails (user_id, folder, message_id, uid, from_addr, subject,
+                date, text_body, truncated, first_seen_at, last_seen_at)
+           VALUES ('jerome', 'INBOX', '<abc@x>', '1', 'a@b.com', 'sub',
+                '2026-05-20T12:00:00+00:00', 'body', 0,
+                '2026-05-20T12:00:00+00:00', '2026-05-20T12:00:00+00:00')"""
+    )
+    conn.commit()
+    eid = conn.execute("SELECT id FROM emails").fetchone()["id"]
+
+    init_schema(conn)
+
+    # Email still there with same id
+    row = conn.execute("SELECT subject FROM emails WHERE id = ?", (eid,)).fetchone()
+    assert row["subject"] == "sub"
+    conn.close()
+
+
+def test_init_schema_idempotent_on_v2(mem_db):
+    # mem_db is already at v2 (fixture inits at current SCHEMA_VERSION)
+    init_schema(mem_db)
+    init_schema(mem_db)
+    row = mem_db.execute(
+        "SELECT value FROM _meta WHERE key = 'schema_version'"
+    ).fetchone()
+    assert row["value"] == "2"
 
 
 # --- upsert_email ------------------------------------------------------------

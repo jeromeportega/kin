@@ -1,25 +1,86 @@
 """SQLite persistence for kin.
 
-Three tables:
+Tables:
 - `emails`: one row per (user_id, message_id). Holds enough to re-classify
-  offline without hitting IMAP again (full text_body + truncated flag).
-- `runs`: one row per triage invocation. Argument/result counters.
+  offline (full text_body + truncated flag).
+- `runs`: one row per triage invocation.
 - `classifications`: one row per (email_id, model, prompt_version) for
   successes (enforced by a partial unique index where error IS NULL), plus
   unlimited rows allowed for error retries.
+- `digests`: one row per digest invocation (Phase 4+).
+- `digest_items`: links a digest to the classifications it surfaced.
 
 All write functions take a `sqlite3.Connection` and expect the caller to
-manage transactions — typically `with conn:` per message.
+manage transactions — typically `with conn:` per logical unit.
 """
 import json
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from app.email_source import FetchedEmail
 from app.schemas.email import EmailClassification
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
+
+
+@dataclass(frozen=True)
+class MigrationStep:
+    """One step in the version-to-version migration graph.
+
+    `pre_sql` runs first (additive DDL, or destructive DDL on doomed columns).
+    `data_fn` runs next (transforms rows). `post_sql` runs last (clean-up DDL,
+    e.g. dropping old columns). Each phase is optional — None means skip.
+    """
+    pre_sql: str | None = None
+    data_fn: Callable[[sqlite3.Connection], None] | None = None
+    post_sql: str | None = None
+
+
+_V2_NEW_TABLES_SQL = """
+CREATE TABLE IF NOT EXISTS digests (
+  id INTEGER PRIMARY KEY,
+  user_id TEXT NOT NULL DEFAULT 'jerome',
+  generated_at TEXT NOT NULL,
+  window_hours INTEGER NOT NULL,
+  window_start TEXT NOT NULL,
+  window_end TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
+  include_other INTEGER NOT NULL CHECK (include_other IN (0,1)),
+  args TEXT NOT NULL,
+  classified_count INTEGER NOT NULL,
+  actionable_count INTEGER NOT NULL,
+  informational_count INTEGER NOT NULL,
+  skipped_other_count INTEGER NOT NULL,
+  dropped_low_count INTEGER NOT NULL,
+  markdown TEXT NOT NULL,
+  json_payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_digests_user_generated
+  ON digests (user_id, generated_at DESC);
+
+CREATE TABLE IF NOT EXISTS digest_items (
+  id INTEGER PRIMARY KEY,
+  digest_id INTEGER NOT NULL REFERENCES digests (id) ON DELETE CASCADE,
+  classification_id INTEGER NOT NULL REFERENCES classifications (id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  UNIQUE (digest_id, position),
+  UNIQUE (digest_id, classification_id)
+);
+CREATE INDEX IF NOT EXISTS idx_digest_items_class
+  ON digest_items (classification_id);
+"""
+
+
+# Migration paths keyed by (from_version, to_version). Add entries as you
+# bump SCHEMA_VERSION. v1→v2 is purely additive; the new-tables SQL is
+# safe to re-run.
+_MIGRATIONS: dict[tuple[str, str], MigrationStep] = {
+    ("1", "2"): MigrationStep(pre_sql=_V2_NEW_TABLES_SQL),
+}
 
 
 _SCHEMA_SQL = """
@@ -87,7 +148,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_class_unique_success
   WHERE error IS NULL;
 CREATE INDEX IF NOT EXISTS idx_class_email ON classifications (email_id);
 CREATE INDEX IF NOT EXISTS idx_class_classified_at ON classifications (classified_at DESC);
-"""
+""" + _V2_NEW_TABLES_SQL
 
 
 def connect(path: Path | str) -> sqlite3.Connection:
@@ -102,22 +163,62 @@ def connect(path: Path | str) -> sqlite3.Connection:
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
-    """Idempotent schema bootstrap. Raises if schema_version doesn't match."""
-    conn.executescript(_SCHEMA_SQL)
-    existing = conn.execute(
+    """Idempotent schema bootstrap with migration support.
+
+    Order of operations:
+    1. Ensure `_meta` exists (need it to read the version).
+    2. Inspect `_meta.schema_version`:
+       - missing → fresh DB; run full current schema, seed version.
+       - matches SCHEMA_VERSION → idempotent backstop only.
+       - older → look up migration in `_MIGRATIONS` and run it; bail if no path.
+       - newer → raise (can't downgrade).
+    3. Always finish with an idempotent backstop `executescript(_SCHEMA_SQL)`
+       so any tables a migration somehow skipped get created.
+
+    Reading version *before* the backstop is the key change from Phase 3:
+    future destructive migrations can inspect v1 state before the new schema
+    is applied.
+    """
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
+    row = conn.execute(
         "SELECT value FROM _meta WHERE key = 'schema_version'"
     ).fetchone()
-    if existing is None:
+
+    if row is None:
+        # Fresh DB.
+        conn.executescript(_SCHEMA_SQL)
         conn.execute(
             "INSERT INTO _meta (key, value) VALUES ('schema_version', ?)",
             (SCHEMA_VERSION,),
         )
-        conn.commit()
-    elif existing["value"] != SCHEMA_VERSION:
-        raise RuntimeError(
-            f"DB schema_version is {existing['value']!r}, expected {SCHEMA_VERSION!r}. "
-            "Migrations are not yet implemented."
+    elif row["value"] != SCHEMA_VERSION:
+        from_v = row["value"]
+        to_v = SCHEMA_VERSION
+        step = _MIGRATIONS.get((from_v, to_v))
+        if step is None:
+            raise RuntimeError(
+                f"DB schema_version is {from_v!r}; no migration path to "
+                f"{to_v!r}. Migrations available: {sorted(_MIGRATIONS.keys())}"
+            )
+        if step.pre_sql:
+            conn.executescript(step.pre_sql)
+        if step.data_fn:
+            step.data_fn(conn)
+        if step.post_sql:
+            conn.executescript(step.post_sql)
+        conn.execute(
+            "UPDATE _meta SET value = ? WHERE key = 'schema_version'",
+            (to_v,),
         )
+        # Idempotent backstop in case the migration skipped a table.
+        conn.executescript(_SCHEMA_SQL)
+    else:
+        # Already current — idempotent backstop only.
+        conn.executescript(_SCHEMA_SQL)
+
+    conn.commit()
 
 
 def _iso(now: datetime) -> str:
@@ -134,11 +235,7 @@ def upsert_email(
     msg: FetchedEmail,
     now: datetime,
 ) -> int:
-    """INSERT a new email or bump last_seen_at on an existing one. Returns id.
-
-    The (user_id, message_id) pair is unique. Idempotent: calling twice with
-    the same message returns the same id, and updates `last_seen_at`.
-    """
+    """INSERT a new email or bump last_seen_at on an existing one. Returns id."""
     if msg.date.tzinfo is None:
         raise ValueError(f"FetchedEmail.date must be tz-aware: {msg!r}")
     iso_now = _iso(now)
@@ -176,11 +273,7 @@ def find_classification(
     model: str,
     prompt_version: str,
 ) -> dict | None:
-    """Return the most recent SUCCESSFUL classification for (email, model, prompt).
-
-    Error rows are ignored so transient failures auto-retry on the next run.
-    Returns a plain dict (action_items / dates decoded from JSON), or None.
-    """
+    """Return the most recent SUCCESSFUL classification for (email, model, prompt)."""
     row = conn.execute(
         """
         SELECT category, priority, action_required, summary,
@@ -217,8 +310,7 @@ def insert_classification(
     truncated: bool,
     now: datetime,
 ) -> int:
-    """Insert a successful classification row. Raises IntegrityError if a
-    successful row already exists for (email_id, model, prompt_version)."""
+    """Insert a successful classification row."""
     cur = conn.execute(
         """
         INSERT INTO classifications (
@@ -258,8 +350,7 @@ def insert_classification_error(
     truncated: bool,
     now: datetime,
 ) -> int:
-    """Insert an error row. Always allowed — the success-only partial unique
-    index does not constrain rows where error IS NOT NULL."""
+    """Insert an error row. Allowed without UNIQUE collision (partial index)."""
     cur = conn.execute(
         """
         INSERT INTO classifications (
@@ -333,3 +424,176 @@ def finish_run(
         """,
         (_iso(now), fetched, filtered, classified, reused, errors, truncated, run_id),
     )
+
+
+def fetch_classifications_window(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    window_start: datetime,
+    window_end: datetime,
+    model: str | None = None,
+    prompt_version: str | None = None,
+) -> list[dict]:
+    """Return joined (email + classification) rows within the window.
+
+    By default, returns the *latest successful classification per email* —
+    so prompt iterations don't silently drop emails classified under a
+    prior version. When both `model` and `prompt_version` are supplied,
+    filters to that exact pair (forensic mode).
+    """
+    if window_start.tzinfo is None or window_end.tzinfo is None:
+        raise ValueError("window dates must be tz-aware")
+    if (model is None) != (prompt_version is None):
+        raise ValueError(
+            "specify both model and prompt_version, or neither"
+        )
+
+    base_select = """
+        SELECT
+            c.id  AS classification_id,
+            c.model,
+            c.prompt_version,
+            c.category,
+            c.priority,
+            c.action_required,
+            c.summary,
+            c.action_items,
+            c.dates,
+            c.confidence,
+            c.classified_at,
+            e.id          AS email_id,
+            e.message_id,
+            e.uid,
+            e.folder,
+            e.from_addr,
+            e.subject,
+            e.date        AS email_date
+        FROM classifications c
+        JOIN emails e ON e.id = c.email_id
+        WHERE c.error IS NULL
+          AND e.user_id = ?
+          AND e.date >= ?
+          AND e.date <= ?
+    """
+    params: tuple = (
+        user_id,
+        window_start.isoformat(),
+        window_end.isoformat(),
+    )
+
+    if model is not None and prompt_version is not None:
+        sql = base_select + """
+              AND c.model = ?
+              AND c.prompt_version = ?
+            ORDER BY e.date DESC
+        """
+        params = params + (model, prompt_version)
+    else:
+        # Latest successful classification per email.
+        sql = base_select + """
+              AND c.id = (
+                  SELECT c2.id
+                  FROM classifications c2
+                  WHERE c2.email_id = e.id AND c2.error IS NULL
+                  ORDER BY c2.classified_at DESC, c2.id DESC
+                  LIMIT 1
+              )
+            ORDER BY e.date DESC
+        """
+
+    return [
+        {
+            "classification_id": r["classification_id"],
+            "model": r["model"],
+            "prompt_version": r["prompt_version"],
+            "category": r["category"],
+            "priority": r["priority"],
+            "action_required": bool(r["action_required"]),
+            "summary": r["summary"],
+            "action_items": json.loads(r["action_items"]),
+            "dates": json.loads(r["dates"]),
+            "confidence": r["confidence"],
+            "classified_at": r["classified_at"],
+            "email_id": r["email_id"],
+            "message_id": r["message_id"],
+            "uid": r["uid"],
+            "folder": r["folder"],
+            "from_addr": r["from_addr"],
+            "subject": r["subject"],
+            "email_date": r["email_date"],
+        }
+        for r in conn.execute(sql, params)
+    ]
+
+
+def insert_digest(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    generated_at: datetime,
+    window_hours: int,
+    window_start: datetime,
+    window_end: datetime,
+    model: str,
+    prompt_version: str,
+    include_other: bool,
+    args: dict,
+    classified_count: int,
+    actionable_count: int,
+    informational_count: int,
+    skipped_other_count: int,
+    dropped_low_count: int,
+    classification_ids: list[int],
+    markdown: str,
+    json_payload: str,
+) -> int:
+    """Persist a digest + its items atomically.
+
+    `classification_ids` is the rendered order — i.e. `digest_items.position`
+    is assigned by enumeration. Performs a counter sanity check before
+    committing: `COUNT(digest_items) == actionable + informational` must
+    hold.
+    """
+    expected_items = actionable_count + informational_count
+    if len(classification_ids) != expected_items:
+        raise sqlite3.IntegrityError(
+            f"digest counter mismatch: {len(classification_ids)} item ids vs "
+            f"{expected_items} (actionable={actionable_count} + "
+            f"informational={informational_count})"
+        )
+    with conn:
+        cur = conn.execute(
+            """
+            INSERT INTO digests (
+                user_id, generated_at, window_hours, window_start, window_end,
+                model, prompt_version, include_other, args,
+                classified_count, actionable_count, informational_count,
+                skipped_other_count, dropped_low_count, markdown, json_payload
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                _iso(generated_at),
+                window_hours,
+                _iso(window_start),
+                _iso(window_end),
+                model,
+                prompt_version,
+                1 if include_other else 0,
+                json.dumps(args, default=str),
+                classified_count,
+                actionable_count,
+                informational_count,
+                skipped_other_count,
+                dropped_low_count,
+                markdown,
+                json_payload,
+            ),
+        )
+        digest_id = cur.lastrowid
+        conn.executemany(
+            "INSERT INTO digest_items (digest_id, classification_id, position) VALUES (?, ?, ?)",
+            [(digest_id, cid, idx) for idx, cid in enumerate(classification_ids)],
+        )
+    return digest_id
