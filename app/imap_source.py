@@ -7,6 +7,7 @@ though the Phase 2 CLI never exposes anything but the default.
 """
 import logging
 import re
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Iterator, Sequence
 
@@ -35,20 +36,29 @@ def _extract_body(msg) -> tuple[str, bool]:
     return raw, False
 
 
-def _extract_message_id(msg) -> str:
+def _extract_message_id(msg, *, folder: str = "INBOX") -> str:
+    """Return the RFC822 Message-ID, or synthesize a stable fallback.
+
+    Real emails almost always have a Message-ID header. When they don't, we
+    synthesize one of the form `<no-id-{uid}@{folder}.kin.local>` so the
+    `(user_id, message_id)` uniqueness constraint in the DB never trips on
+    an empty string. If `uid` is also missing (shouldn't happen on a real
+    IMAP server), we fall back to a uuid so each row is at least unique.
+    """
     raw = msg.headers.get("message-id") if msg.headers else None
-    if isinstance(raw, tuple) and raw:
+    if isinstance(raw, tuple) and raw and raw[0].strip():
         return raw[0].strip()
-    if isinstance(raw, str) and raw:
+    if isinstance(raw, str) and raw.strip():
         return raw.strip()
-    return str(msg.uid or "")
+    uid_part = str(msg.uid) if msg.uid is not None else uuid.uuid4().hex
+    return f"<no-id-{uid_part}@{folder}.kin.local>"
 
 
-def _to_fetched(msg) -> FetchedEmail:
+def _to_fetched(msg, *, folder: str = "INBOX") -> FetchedEmail:
     text_body, truncated = _extract_body(msg)
     return FetchedEmail(
         uid=str(msg.uid) if msg.uid is not None else "",
-        message_id=_extract_message_id(msg),
+        message_id=_extract_message_id(msg, folder=folder),
         from_addr=(msg.from_ or "").lower(),
         to_addrs=tuple(msg.to or ()),
         cc_addrs=tuple(msg.cc or ()),
@@ -99,7 +109,7 @@ class IMAPSource:
                         msg_date = msg_date.replace(tzinfo=timezone.utc)
                     if msg_date is not None and msg_date < cutoff:
                         continue
-                    fetched = _to_fetched(msg)
+                    fetched = _to_fetched(msg, folder=folder)
                     if fetched.truncated:
                         logger.info(
                             "truncated body message_id=%s original_len=%d",

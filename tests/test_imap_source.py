@@ -68,8 +68,22 @@ def test_extract_message_id_string_headers():
     assert _extract_message_id(_msg(headers={"message-id": "<abc@x>"})) == "<abc@x>"
 
 
-def test_extract_message_id_falls_back_to_uid_when_missing():
-    assert _extract_message_id(_msg(uid="99", headers={})) == "99"
+def test_extract_message_id_synthesizes_fallback_with_uid():
+    assert _extract_message_id(_msg(uid="99", headers={})) == "<no-id-99@INBOX.kin.local>"
+
+
+def test_extract_message_id_uses_folder_in_fallback():
+    assert (
+        _extract_message_id(_msg(uid="42", headers={}), folder="[Gmail]/Trash")
+        == "<no-id-42@[Gmail]/Trash.kin.local>"
+    )
+
+
+def test_extract_message_id_uuid_fallback_when_uid_also_missing():
+    val = _extract_message_id(_msg(uid=None, headers={}))
+    assert val.startswith("<no-id-")
+    assert val.endswith("@INBOX.kin.local>")
+    assert len(val) > len("<no-id-@INBOX.kin.local>")
 
 
 # --- _to_fetched -------------------------------------------------------------
