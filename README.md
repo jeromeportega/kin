@@ -216,11 +216,66 @@ sqlite3 data/kin.sqlite \
 
 Phase 4 bumps `_meta.schema_version` from `1` to `2`. Existing Phase 3 DBs auto-migrate idempotently on first run of either `triage` or `digest` — the migration is purely additive (new `digests` and `digest_items` tables). `tests/fixtures/schema_v1.sql` snapshots the prior schema so future destructive migrations have something to test against.
 
+## Phase 5 — Obsidian + Calendar sync (built)
+
+`app.sync` exports the latest daily digest from `data/kin.sqlite` to two destinations:
+
+- **Obsidian** — markdown files written into a configured vault. A date-stamped daily note (`<vault>/kin/digests/2026-05-20.md`) summarizes the day; each classified email gets its own note (`<vault>/kin/emails/<slug>.md`) with YAML frontmatter, action-item checkboxes, and dates. The daily note `[[wikilinks]]` to each per-email note for Obsidian's graph + Dataview.
+- **Google Calendar / Apple Calendar** — an `.ics` file (default `runs/kin-<YYYY-MM-DD>.ics`) with one all-day `VEVENT` per actionable date. UIDs are UUID5-derived from `(message_id, date)`, so re-importing updates existing events instead of duplicating.
+
+### Setup
+
+```bash
+# Point kin at your Obsidian vault root
+echo 'KIN_OBSIDIAN_VAULT=/Users/you/Documents/Obsidian/Vault' >> .env
+
+# (Optional) Override the ICS output path
+# KIN_ICS_PATH=~/Library/Calendars/kin.ics
+```
+
+### Usage
+
+```bash
+# Sync the latest daily digest
+uv run python -m app.sync
+
+# Dry-run — show planned file writes without touching disk
+uv run python -m app.sync --dry-run
+
+# Sync a specific past digest by id
+uv run python -m app.sync --digest-id 42
+
+# Just write the calendar; skip the vault
+uv run python -m app.sync --no-obsidian
+
+# Pipe JSON-like ICS to stdout
+uv run python -m app.sync --no-obsidian --ics-path -
+```
+
+| flag | default | meaning |
+| ---- | ------- | ------- |
+| `--user NAME` | `$KIN_USER` or `jerome` | User scope. |
+| `--digest-id N` | latest | Sync a specific past digest. |
+| `--vault-path PATH` | `$KIN_OBSIDIAN_VAULT` | Obsidian vault root. |
+| `--ics-path PATH` | `runs/kin-<date>.ics` | Where to write the .ics. `-` means stdout. |
+| `--no-obsidian` | off | Skip vault writes entirely. |
+| `--no-ics` | off | Skip ICS export entirely. |
+| `--dry-run` | off | Print planned paths; write nothing. |
+
+### Implementation notes
+
+- **Sync is idempotent.** Filenames and event UIDs are UUID5-derived from `message_id`, so re-running overwrites the same files and re-imported events update in place.
+- **Read-only on the DB.** Sync opens `data/kin.sqlite` via SQLite's `mode=ro` URI form and verifies `_meta.schema_version` matches; never writes.
+- **`window_hours = 24` default for "the latest digest"** — a forensic `app.digest --hours 720` doesn't accidentally become the synced daily note. Use `--digest-id N` to sync a forensic digest explicitly.
+- **Local-time date for the daily-note filename**, UTC ISO for stored timestamps. An 11 PM Pacific run on May 19 writes `2026-05-19.md`, not `2026-05-20.md`.
+- **Atomic writes** via same-directory `tempfile.NamedTemporaryFile` + `os.replace`. Partial writes never reach the vault.
+- **Defense-in-depth path check**: every vault write is asserted to be under `<vault>/kin/` before it lands.
+
 ## Roadmap
 
 1. Classify a single sample email ✅
 2. Connect Gmail / IMAP with deterministic pre-filter ✅
 3. Persist results to SQLite ✅
 4. Daily digest ✅
-5. Notion + Google Calendar integration ← *next*
-6. Multi-folder / multi-user (`IMAPSource(folders=…)` seam and `user_id` columns already in place; see `docs/multi-user-customization.md`)
+5. Obsidian + Calendar export ✅
+6. Multi-user onboarding (`IMAPSource(folders=…)`, `user_id` columns, and `users/<name>/` TOML — see `docs/multi-user-customization.md`) ← *next*
