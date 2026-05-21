@@ -89,10 +89,10 @@ Useful flags:
 | `--model NAME` | `qwen3:14b` | Ollama model tag. |
 | `--config PATH` | `kin.toml` | Filter config path. |
 
-Each JSONL record carries `model` and `prompt_version` so outputs stay interpretable as those evolve. Per-run stats land on stderr:
+Each JSONL record carries `model`, `prompt_version`, and a `source` field (`classifier` | `db` | `error` | `filter` for dry-runs) so outputs stay interpretable as those evolve. Per-run stats land on stderr:
 
 ```
-fetched=42 filtered=7 classified=7 errors=0 truncated=0 elapsed=24.3s
+fetched=42 filtered=7 classified=7 reused=0 errors=0 truncated=0 elapsed=24.3s
 ```
 
 ### Bootstrapping `kin.toml` — the `audit` helper
@@ -112,6 +112,40 @@ uv run python -m app.audit --days 30 --min-count 3
 
 The audit tool reads only — same `mark_seen=False` guarantee as triage.
 
+## Phase 3 — Persistence (built)
+
+Every triage run writes to a local SQLite database (default `data/kin.sqlite`, override via `KIN_DB_PATH`). The DB stores:
+
+- **`emails`** — one row per unique message (`(user_id, message_id)`), including the body the model saw, so re-classification with a new prompt doesn't need IMAP.
+- **`runs`** — one row per `app.triage` invocation, with counters and the args used.
+- **`classifications`** — one row per `(email, model, prompt_version)` for successful classifications, plus error rows for retry history.
+
+On a re-run, classifications matching the current `(model, prompt_version)` are loaded from the DB instead of re-classifying. JSONL records still emit for every survivor, but with `source: "db"` for cache hits. A prompt change (which bumps `prompt_version`) invalidates the cache automatically. Errors are stored but ignored by the cache lookup, so transient failures retry on the next run.
+
+### New flags
+
+| flag | default | meaning |
+| ---- | ------- | ------- |
+| `--no-db` | off | Skip all DB interaction (stateless behavior). |
+| `--force-reclassify` | off | Ignore cached classifications; re-classify even on cache hits. |
+| `--user NAME` | `$KIN_USER` or `jerome` | User scope, forward-compat for multi-user. |
+
+### Peeking at the DB
+
+```bash
+# Recent runs
+sqlite3 data/kin.sqlite \
+  "SELECT id, started_at, fetched, filtered, classified, reused, errors FROM runs ORDER BY id DESC LIMIT 10;"
+
+# Latest classifications joined with email metadata
+sqlite3 data/kin.sqlite \
+  "SELECT e.subject, c.category, c.priority, c.action_required FROM classifications c
+     JOIN emails e ON e.id = c.email_id
+    WHERE c.error IS NULL ORDER BY c.classified_at DESC LIMIT 10;"
+```
+
+WAL journal mode is enabled, so `sqlite3` can read while triage is mid-run.
+
 ### Exit codes
 
 | code | meaning |
@@ -121,6 +155,7 @@ The audit tool reads only — same `mark_seen=False` guarantee as triage.
 | 2 | config error (missing or malformed `kin.toml`/env) |
 | 3 | IMAP connection/auth failure |
 | 4 | model unreachable (every classification failed) |
+| 5 | DB unreachable (open or schema mismatch) |
 
 ### Tests
 
@@ -132,7 +167,7 @@ uv run pytest tests/ -v
 
 1. Classify a single sample email ✅
 2. Connect Gmail / IMAP with deterministic pre-filter ✅
-3. Persist results to SQLite ← *next*
-4. Daily digest
+3. Persist results to SQLite ✅
+4. Daily digest ← *next*
 5. Notion + Google Calendar integration
-6. Multi-folder / multi-user (`IMAPSource(folders=…)` seam is already in place)
+6. Multi-folder / multi-user (`IMAPSource(folders=…)` seam and `user_id` columns already in place; see `docs/multi-user-customization.md`)
