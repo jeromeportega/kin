@@ -163,11 +163,64 @@ WAL journal mode is enabled, so `sqlite3` can read while triage is mid-run.
 uv run pytest tests/ -v
 ```
 
+## Phase 4 — Daily digest (built)
+
+`app.digest` reads `data/kin.sqlite` and produces a human-facing summary plus a structured JSON document. No IMAP, no LLM calls — purely a query over the persistence layer.
+
+```bash
+# Markdown to stdout, last 24 hours
+uv run python -m app.digest
+
+# Custom window
+uv run python -m app.digest --hours 168          # weekly
+
+# Save both formats
+uv run python -m app.digest --out-md runs/today.md --out-json runs/today.json
+
+# JSON to stdout (pipe to jq)
+uv run python -m app.digest --out-json - | jq '.summary'
+
+# Show 'other' (marketing/social) items in the groups
+uv run python -m app.digest --include-other
+```
+
+Each invocation also writes a row to the `digests` table plus one row per included item to `digest_items` — useful for regression-testing future renderers against past output, and for answering "what was on the radar in late May?" months later. `--no-persist` opts out for ad-hoc runs.
+
+The default query picks the **latest successful classification per email**, so a mid-day prompt iteration doesn't silently drop emails classified under the prior version. `--model` and `--prompt-version` (forensic flags) restrict to a specific pair when debugging.
+
+### Filter and grouping rules
+
+- `other` items are skipped from groups and surfaced as a single count line (unless `--include-other`).
+- `high` and `medium` priority items are always rendered.
+- `low` priority items are rendered only when `action_required=true` (matches the user-stated preference that low-priority FYIs hide behind a count).
+- Within each priority section, items are grouped by `category` and sorted by email date (newest first).
+
+### Peeking at persisted digests
+
+```bash
+sqlite3 data/kin.sqlite \
+  "SELECT id, generated_at, classified_count, actionable_count, skipped_other_count
+   FROM digests ORDER BY id DESC LIMIT 10;"
+
+# Items in the latest digest, in their rendered order
+sqlite3 data/kin.sqlite \
+  "SELECT di.position, e.subject, c.category, c.priority
+   FROM digest_items di
+   JOIN classifications c ON c.id = di.classification_id
+   JOIN emails e ON e.id = c.email_id
+   WHERE di.digest_id = (SELECT max(id) FROM digests)
+   ORDER BY di.position;"
+```
+
+### Schema migration
+
+Phase 4 bumps `_meta.schema_version` from `1` to `2`. Existing Phase 3 DBs auto-migrate idempotently on first run of either `triage` or `digest` — the migration is purely additive (new `digests` and `digest_items` tables). `tests/fixtures/schema_v1.sql` snapshots the prior schema so future destructive migrations have something to test against.
+
 ## Roadmap
 
 1. Classify a single sample email ✅
 2. Connect Gmail / IMAP with deterministic pre-filter ✅
 3. Persist results to SQLite ✅
-4. Daily digest ← *next*
-5. Notion + Google Calendar integration
+4. Daily digest ✅
+5. Notion + Google Calendar integration ← *next*
 6. Multi-folder / multi-user (`IMAPSource(folders=…)` seam and `user_id` columns already in place; see `docs/multi-user-customization.md`)
