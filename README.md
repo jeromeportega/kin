@@ -271,6 +271,48 @@ uv run python -m app.sync --no-obsidian --ics-path -
 - **Atomic writes** via same-directory `tempfile.NamedTemporaryFile` + `os.replace`. Partial writes never reach the vault.
 - **Defense-in-depth path check**: every vault write is asserted to be under `<vault>/kin/` before it lands.
 
+## Phase 6 — Email delivery (built)
+
+`app.send` reads the latest daily digest from `data/kin.sqlite` and emails it as a `multipart/alternative` message (HTML + plain-text fallback). No IMAP, no LLM calls — purely read-only.
+
+```bash
+# Send the latest digest
+uv run python -m app.send
+
+# Preview the full RFC822 message; open no socket
+uv run python -m app.send --dry-run
+
+# Send a specific past digest by id
+uv run python -m app.send --digest-id 42
+```
+
+| flag | default | meaning |
+| ---- | ------- | ------- |
+| `--user NAME` | `$KIN_USER` or `jerome` | User scope; rejects `--digest-id` records belonging to a different user. |
+| `--digest-id N` | latest (24 h window) | Send a specific past digest instead of the most recent one. |
+| `--dry-run` | off | Print the full RFC822 `multipart/alternative` to stdout; open no socket. |
+
+### Recipient and transport resolution
+
+| Env var | Default | Behavior |
+| ------- | ------- | -------- |
+| `KIN_DIGEST_TO` | — | Delivery address. Falls back to `GMAIL_ADDRESS` if unset. |
+| `GMAIL_ADDRESS` | — | Required. Used as the sender and as the fallback recipient. Missing → `EXIT_CONFIG`. |
+| `GMAIL_APP_PASSWORD` | — | Required. SMTP login password. Missing → `EXIT_CONFIG`. |
+| `SMTP_HOST` | `smtp.gmail.com` | SMTP server host. |
+| `SMTP_PORT` | `587` | SMTP server port (STARTTLS). |
+
+Transport uses `smtplib.SMTP(host, port)` → `starttls()` → `login()` → `send_message()`. A rejected login raises `smtplib.SMTPException` and exits with code 1 (unexpected) — auth rejection is not mapped to `EXIT_CONFIG`.
+
+### Exit codes
+
+| code | meaning |
+| ---- | ------- |
+| 0 | message sent (or `--dry-run` printed) |
+| 1 | unexpected exception (e.g. SMTP auth rejected, network error) |
+| 2 | config error (missing `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`, or no digest found) |
+| 5 | DB unreachable or schema mismatch |
+
 ## Roadmap
 
 1. Classify a single sample email ✅
@@ -278,4 +320,5 @@ uv run python -m app.sync --no-obsidian --ics-path -
 3. Persist results to SQLite ✅
 4. Daily digest ✅
 5. Obsidian + Calendar export ✅
-6. Multi-user onboarding (`IMAPSource(folders=…)`, `user_id` columns, and `users/<name>/` TOML — see `docs/multi-user-customization.md`) ← *next*
+6. Email delivery ✅
+7. Multi-user onboarding (`IMAPSource(folders=…)`, `user_id` columns, and `users/<name>/` TOML — see `docs/multi-user-customization.md`) ← *next*
