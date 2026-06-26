@@ -12,6 +12,10 @@ from app.email_source import FetchedEmail
 from app.schemas.email import Category, EmailClassification, Priority
 
 T0 = datetime(2026, 5, 20, 12, 0, 0, tzinfo=timezone.utc)
+# Freeze "now" a few hours after the seeded email so the digest's default 24h
+# window always contains T0. Without this, these tests silently start failing
+# once the real clock drifts past T0 + window.
+_NOW = datetime(2026, 5, 20, 18, 0, 0, tzinfo=timezone.utc)
 
 
 def _email(msg_id="<a@x>") -> FetchedEmail:
@@ -57,6 +61,7 @@ def _setup_env(monkeypatch, tmp_path):
 
 def _run(monkeypatch, *argv) -> int:
     monkeypatch.setattr(sys, "argv", ["app.digest", *argv])
+    monkeypatch.setattr(digest_mod, "_utcnow", lambda: _NOW)
     return digest_mod.main()
 
 
