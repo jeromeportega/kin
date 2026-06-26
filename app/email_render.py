@@ -12,6 +12,7 @@ _PRIORITY_LABELS = [
     ("Medium priority", "medium"),
     ("Low priority — actionable", "low"),
 ]
+_KNOWN_PRIORITIES = {key for _, key in _PRIORITY_LABELS}
 
 _NOTHING = "Nothing actionable today."
 
@@ -23,14 +24,17 @@ def _group_items(
 
     Returns [(priority_label, [(category, [items])])] for non-empty buckets,
     inner categories sorted alphabetically.
+    Raises ValueError for any item whose priority is not one of the three known values.
     """
     by_priority: dict[str, list[DigestItem]] = {"high": [], "medium": [], "low": []}
     for item in digest.items:
-        by_priority.setdefault(item.priority, []).append(item)
+        if item.priority not in _KNOWN_PRIORITIES:
+            raise ValueError(f"Unknown priority {item.priority!r}; expected one of {_KNOWN_PRIORITIES}")
+        by_priority[item.priority].append(item)
 
     result = []
     for label, key in _PRIORITY_LABELS:
-        group = by_priority.get(key, [])
+        group = by_priority[key]
         if not group:
             continue
         by_category: dict[str, list[DigestItem]] = {}
@@ -48,7 +52,7 @@ def render_html(digest: Digest) -> str:
     Empty digest.items => a clean 'nothing actionable today' body.
     """
     e = _html.escape
-    parts: list[str] = ["<html><body>"]
+    parts: list[str] = ["<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"></head><body>"]
 
     if not digest.items:
         parts.append(f"<p>{_NOTHING}</p>")
@@ -62,7 +66,7 @@ def render_html(digest: Digest) -> str:
             parts.append(f"<h3>{e(category)} ({len(items)})</h3>")
             parts.append("<ul>")
             for item in items:
-                subj = e(item.subject) or "(no subject)"
+                subj = e(item.subject or "") or "(no subject)"
                 parts.append(f"<li><strong>{subj}</strong><br>")
                 parts.append(f"From: {e(item.from_addr)}<br>")
                 if item.summary:

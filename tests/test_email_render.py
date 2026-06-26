@@ -1,4 +1,5 @@
 """Unit tests for app.email_render — pure HTML/text/subject renderers."""
+import re
 from datetime import datetime
 
 import pytest
@@ -213,7 +214,7 @@ def test_html_empty_digest_no_group_headers():
 def test_html_empty_digest_is_well_formed():
     d = _digest(items=[], classified_count=0, actionable_count=0)
     out = render_html(d)
-    assert out.startswith("<html>")
+    assert out.startswith("<!DOCTYPE html>")
     assert out.endswith("</html>")
 
 
@@ -261,15 +262,11 @@ def test_html_escapes_all_item_derived_fields():
     )
     d = _digest(items=[item])
     out = render_html(d)
-    # No raw < or & except from the structural HTML tags
-    # Strip known structural tags and verify no raw user-derived < or &
-    import re
-    # Remove all HTML tags (structural)
+    # Strip structural HTML tags; user-derived content remains as HTML entities
     text_only = re.sub(r"<[^>]+>", "", out)
-    assert "<" not in text_only
-    assert "&" not in text_only or all(
-        amp in text_only for amp in []
-    )
+    assert "<" not in text_only        # no unescaped < from user data
+    assert "&lt;" in text_only         # proves < in user data was escaped
+    assert "&amp;" in text_only        # proves & in user data was escaped
 
 
 def test_text_does_not_escape_special_chars():
