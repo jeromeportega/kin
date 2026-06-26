@@ -12,12 +12,25 @@ from fastapi import Depends
 import app.db
 from app.cli_common import connect_db_ro
 
+# Named constant so callers and tests import the fallback rather than hardcoding the string.
+DEFAULT_KIN_USER = "jerome"
+
 
 def resolve_db_path() -> Path:
-    """$KIN_DB_PATH env var → data/kin.sqlite default."""
+    """$KIN_DB_PATH env var → data/kin.sqlite default.
+
+    When KIN_DB_PATH is set the path is canonicalised (symlinks resolved) and
+    validated to end in .sqlite or .db to prevent accidental redirection to
+    unrelated files.
+    """
     env_path = os.environ.get("KIN_DB_PATH")
     if env_path:
-        return Path(env_path)
+        p = Path(env_path).resolve()
+        if p.suffix not in (".sqlite", ".db"):
+            raise ValueError(
+                f"KIN_DB_PATH must point to a .sqlite or .db file, got: {p}"
+            )
+        return p
     return Path("data") / "kin.sqlite"
 
 
@@ -37,7 +50,7 @@ def resolve_user_id(user_id: str | None = None) -> str:
     1. explicit ?user_id= query param
     2. $KIN_DEMO_USER env var
     3. $KIN_USER env var
-    4. 'jerome' hardcoded fallback
+    4. DEFAULT_KIN_USER fallback
     """
     if user_id is not None:
         return user_id
@@ -47,4 +60,4 @@ def resolve_user_id(user_id: str | None = None) -> str:
     kin_user = os.environ.get("KIN_USER")
     if kin_user:
         return kin_user
-    return "jerome"
+    return DEFAULT_KIN_USER

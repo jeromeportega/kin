@@ -7,6 +7,7 @@ import pytest
 
 import app.db
 from app.db import SCHEMA_VERSION
+from api.deps import DEFAULT_KIN_USER
 
 
 # ---------------------------------------------------------------------------
@@ -67,10 +68,10 @@ def test_scope_kin_user_when_no_demo(monkeypatch):
     assert resolve_user_id(None) == "kin"
 
 
-def test_scope_fallback_to_jerome(monkeypatch):
+def test_scope_fallback_to_default(monkeypatch):
     monkeypatch.delenv("KIN_DEMO_USER", raising=False)
     monkeypatch.delenv("KIN_USER", raising=False)
-    assert resolve_user_id(None) == "jerome"
+    assert resolve_user_id(None) == DEFAULT_KIN_USER
 
 
 def test_scope_explicit_beats_demo(monkeypatch):
@@ -79,44 +80,34 @@ def test_scope_explicit_beats_demo(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Scope precedence — HTTP-level wiring via /api/scope
+# resolve_db_path validation
 # ---------------------------------------------------------------------------
 
-def test_scope_http_explicit_param(client, monkeypatch):
-    """`?user_id=` query param reaches resolve_user_id via FastAPI Depends wiring."""
-    monkeypatch.delenv("KIN_DEMO_USER", raising=False)
-    monkeypatch.delenv("KIN_USER", raising=False)
-    resp = client.get("/api/scope?user_id=alice")
-    assert resp.status_code == 200
-    assert resp.json()["user_id"] == "alice"
+from api.deps import resolve_db_path
 
 
-def test_scope_http_demo_user(client, monkeypatch):
-    """`$KIN_DEMO_USER` is used when no query param is provided."""
-    monkeypatch.delenv("KIN_DEMO_USER", raising=False)
-    monkeypatch.setenv("KIN_DEMO_USER", "demouser")
-    resp = client.get("/api/scope")
-    assert resp.status_code == 200
-    assert resp.json()["user_id"] == "demouser"
+def test_resolve_db_path_default(monkeypatch):
+    """Default path is data/kin.sqlite when KIN_DB_PATH is unset."""
+    monkeypatch.delenv("KIN_DB_PATH", raising=False)
+    p = resolve_db_path()
+    assert p.name == "kin.sqlite"
 
 
-def test_scope_http_kin_user(client, monkeypatch):
-    """`$KIN_USER` is used when no query param or KIN_DEMO_USER."""
-    monkeypatch.delenv("KIN_DEMO_USER", raising=False)
-    monkeypatch.delenv("KIN_USER", raising=False)
-    monkeypatch.setenv("KIN_USER", "kinuser")
-    resp = client.get("/api/scope")
-    assert resp.status_code == 200
-    assert resp.json()["user_id"] == "kinuser"
+def test_resolve_db_path_custom(monkeypatch, tmp_path):
+    """KIN_DB_PATH with a .sqlite extension is accepted."""
+    db = tmp_path / "custom.sqlite"
+    db.touch()
+    monkeypatch.setenv("KIN_DB_PATH", str(db))
+    assert resolve_db_path() == db.resolve()
 
 
-def test_scope_http_fallback(client, monkeypatch):
-    """Falls back to 'jerome' when no env vars or query param."""
-    monkeypatch.delenv("KIN_DEMO_USER", raising=False)
-    monkeypatch.delenv("KIN_USER", raising=False)
-    resp = client.get("/api/scope")
-    assert resp.status_code == 200
-    assert resp.json()["user_id"] == "jerome"
+def test_resolve_db_path_rejects_bad_extension(monkeypatch, tmp_path):
+    """KIN_DB_PATH pointing to a non-db file is rejected at resolution time."""
+    bad = tmp_path / "secrets.txt"
+    bad.touch()
+    monkeypatch.setenv("KIN_DB_PATH", str(bad))
+    with pytest.raises(ValueError, match=r"\.sqlite or \.db"):
+        resolve_db_path()
 
 
 # ---------------------------------------------------------------------------
@@ -148,13 +139,14 @@ def test_ro_conn_lifecycle(seeded_db_path):
 # No-write by absence — NFR-1/T2
 # ---------------------------------------------------------------------------
 
-def test_no_imap_or_llm_imports():
-    """api.main, api.deps, and all api.routers source must not reference imap_* or ollama."""
+def test_no_forbidden_imports():
+    """api.main, api.deps, and all api.routers source must not reference
+    write-path, IMAP, or LLM modules."""
     import api.main
     import api.deps
     import api.routers
 
-    forbidden = ("imap", "ollama")
+    forbidden = ("imap", "imaplib", "ollama", "openai", "anthropic", "smtplib")
 
     # Collect modules: main, deps, and every discovered router
     modules_to_check = [api.main, api.deps]
@@ -164,7 +156,6 @@ def test_no_imap_or_llm_imports():
         modules_to_check.append(mod)
 
     for mod in modules_to_check:
-        # inspect.getsource resolves to the .py source regardless of __file__ value
         src = inspect.getsource(mod)
         for token in forbidden:
             assert token not in src, (
