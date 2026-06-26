@@ -28,10 +28,11 @@ def seeded_db_path(tmp_path) -> Path:
 @pytest.fixture
 def client(seeded_db_path) -> TestClient:
     """FastAPI TestClient with resolve_db_path overridden to seeded_db_path."""
+    saved = fastapi_app.dependency_overrides.copy()
     fastapi_app.dependency_overrides[resolve_db_path] = lambda: seeded_db_path
     with TestClient(fastapi_app) as c:
         yield c
-    fastapi_app.dependency_overrides.clear()
+    fastapi_app.dependency_overrides = saved
 
 
 def seed_users(db_path: Path, *users: str) -> None:
