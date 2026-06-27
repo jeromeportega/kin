@@ -148,6 +148,26 @@ describe("fetchDigest", () => {
     const calledOptions = vi.mocked(fetch).mock.calls[0][1] as RequestInit
     expect(calledOptions?.cache).toBe("no-store")
   })
+
+  it("creates a fresh AbortSignal per call", async () => {
+    const digest = makeDigest()
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(digest), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(digest), { status: 200 }))
+
+    await fetchDigest(DEMO_USER)
+    await fetchDigest(DEMO_USER)
+
+    const signal1 = (vi.mocked(fetch).mock.calls[0][1] as RequestInit)?.signal
+    const signal2 = (vi.mocked(fetch).mock.calls[1][1] as RequestInit)?.signal
+    expect(signal1).toBeInstanceOf(AbortSignal)
+    expect(signal2).toBeInstanceOf(AbortSignal)
+    expect(signal1).not.toBe(signal2)
+  })
+
+  it("throws when userId is empty", async () => {
+    await expect(fetchDigest("")).rejects.toThrow("userId is required")
+  })
 })
 
 // ─── fetchClassifications ─────────────────────────────────────────────────────
@@ -257,5 +277,24 @@ describe("fetchClassifications", () => {
 
     const calledOptions = vi.mocked(fetch).mock.calls[0][1] as RequestInit
     expect(calledOptions?.cache).toBe("no-store")
+  })
+
+  it("creates a fresh AbortSignal per call", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }))
+
+    await fetchClassifications(DEMO_USER, 24)
+    await fetchClassifications(DEMO_USER, 24)
+
+    const signal1 = (vi.mocked(fetch).mock.calls[0][1] as RequestInit)?.signal
+    const signal2 = (vi.mocked(fetch).mock.calls[1][1] as RequestInit)?.signal
+    expect(signal1).toBeInstanceOf(AbortSignal)
+    expect(signal2).toBeInstanceOf(AbortSignal)
+    expect(signal1).not.toBe(signal2)
+  })
+
+  it("throws when userId is empty", async () => {
+    await expect(fetchClassifications("", 24)).rejects.toThrow("userId is required")
   })
 })
