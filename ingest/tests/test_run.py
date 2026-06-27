@@ -6,7 +6,8 @@ app.db leaf functions (only classify is mocked, never app.db) to prove:
   - dedup via UNIQUE(user_id, message_id) + upsert_email ON CONFLICT
   - digest is built and persisted after each run
 """
-import time
+import sqlite3
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import Iterator
 from unittest.mock import patch
@@ -16,7 +17,7 @@ import pytest
 from app import db
 from app.email_source import FetchedEmail
 from app.schemas.email import Category, EmailClassification, Priority
-from ingest.run import IngestionResult, run_ingestion
+from ingest.run import EXIT_CONFIG, EXIT_DB, EXIT_OK, EXIT_REAUTH, IngestionResult, run_ingestion
 
 
 # ---------------------------------------------------------------------------
@@ -224,26 +225,27 @@ def test_dedup_last_seen_at_is_bumped_on_second_run(
 ):
     e1 = _email(message_id="<msg1@example.com>", uid="uid1")
 
-    with patch("ingest.run.classify", return_value=FAKE_CLASSIFICATION):
-        _run(
-            FakeSource([e1]),
-            user_email="me@x.com",
-            db_path=db_path,
-            config_path=config_path,
-            token_store_path=token_store_path,
-        )
-
-    # Ensure the clock advances so the second run gets a strictly later `now`.
-    time.sleep(0.01)
+    t0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    t1 = t0 + timedelta(seconds=1)
 
     with patch("ingest.run.classify", return_value=FAKE_CLASSIFICATION):
-        _run(
-            FakeSource([e1]),
-            user_email="me@x.com",
-            db_path=db_path,
-            config_path=config_path,
-            token_store_path=token_store_path,
-        )
+        with patch("ingest.run._utcnow", return_value=t0):
+            _run(
+                FakeSource([e1]),
+                user_email="me@x.com",
+                db_path=db_path,
+                config_path=config_path,
+                token_store_path=token_store_path,
+            )
+
+        with patch("ingest.run._utcnow", return_value=t1):
+            _run(
+                FakeSource([e1]),
+                user_email="me@x.com",
+                db_path=db_path,
+                config_path=config_path,
+                token_store_path=token_store_path,
+            )
 
     conn = db.connect(db_path)
     try:
@@ -371,3 +373,68 @@ def test_db_opened_read_write_writes_succeed(config_path, db_path, token_store_p
         conn.close()
 
     assert result.errors == 0
+
+
+# ---------------------------------------------------------------------------
+# main() exit codes — EXIT_REAUTH, EXIT_CONFIG, EXIT_DB
+# ---------------------------------------------------------------------------
+
+
+def test_main_exit_reauth(config_path, db_path, token_store_path):
+    """A source that raises ReauthRequired maps to EXIT_REAUTH (2)."""
+    from ingest.oauth import ReauthRequired
+    from ingest.run import main
+
+    class ReauthSource:
+        def fetch_recent(self, hours, limit):
+            raise ReauthRequired("token expired")
+
+    with patch("ingest.run.run_ingestion", side_effect=ReauthRequired("expired")):
+        with patch("sys.argv", ["ingest.run", "--user", "me@x.com",
+                                "--config", str(config_path),
+                                "--db", str(db_path),
+                                "--token-store", str(token_store_path)]):
+            assert main() == EXIT_REAUTH
+
+
+def test_main_exit_config_missing_token(config_path, db_path, tmp_path):
+    """Missing token file maps to EXIT_CONFIG (3)."""
+    from ingest.run import main
+
+    missing_tokens = tmp_path / "no_tokens.json"
+
+    with patch("sys.argv", ["ingest.run", "--user", "me@x.com",
+                            "--config", str(config_path),
+                            "--db", str(db_path),
+                            "--token-store", str(missing_tokens)]):
+        with patch("ingest.run.run_ingestion",
+                   side_effect=FileNotFoundError("no token")):
+            assert main() == EXIT_CONFIG
+
+
+def test_main_exit_db(config_path, db_path, token_store_path):
+    """A sqlite3.DatabaseError maps to EXIT_DB (4)."""
+    from ingest.run import main
+
+    with patch("ingest.run.run_ingestion",
+               side_effect=sqlite3.DatabaseError("disk full")):
+        with patch("sys.argv", ["ingest.run", "--user", "me@x.com",
+                                "--config", str(config_path),
+                                "--db", str(db_path),
+                                "--token-store", str(token_store_path)]):
+            assert main() == EXIT_DB
+
+
+def test_main_exit_ok(config_path, db_path, token_store_path):
+    """Successful run returns EXIT_OK (0)."""
+    from ingest.run import main
+
+    fake_result = IngestionResult(
+        fetched=1, filtered=1, classified=1, reused=0, errors=0, digest_id=42
+    )
+    with patch("ingest.run.run_ingestion", return_value=fake_result):
+        with patch("sys.argv", ["ingest.run", "--user", "me@x.com",
+                                "--config", str(config_path),
+                                "--db", str(db_path),
+                                "--token-store", str(token_store_path)]):
+            assert main() == EXIT_OK

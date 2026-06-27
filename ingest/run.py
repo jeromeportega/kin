@@ -61,7 +61,7 @@ def _render_for_model(msg: FetchedEmail) -> str:
         lines.append(f"Cc: {', '.join(msg.cc_addrs)}")
     lines.extend([
         f"Subject: {msg.subject}",
-        f"Date: {msg.date.isoformat() if msg.date else ''}",
+        f"Date: {msg.date.isoformat()}",
         "",
         msg.text_body,
     ])
@@ -93,32 +93,35 @@ def run_ingestion(
     except Exception as exc:
         raise RuntimeError(f"invalid config in {config_path}: {exc}") from exc
 
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = db.connect(db_path)
+    # Resolve the source (and credentials) BEFORE opening the DB so that a
+    # missing or revoked token does not leave an empty DB on disk.
+    if source is None:
+        from ingest.gmail_source import GmailSource
+        from ingest.oauth import mint_access_credentials
+        from ingest.token_store import read_refresh_token
 
-    try:
-        if source is None:
-            from ingest.gmail_source import GmailSource
-            from ingest.oauth import mint_access_credentials
-            from ingest.token_store import read_refresh_token
-
-            refresh_token = read_refresh_token(user_email, path=token_store_path)
-            if refresh_token is None:
-                raise FileNotFoundError(
-                    f"No refresh token for {user_email!r} in {token_store_path}"
-                )
-            client_id = os.environ.get("AUTH_GOOGLE_ID", "")
-            client_secret = os.environ.get("AUTH_GOOGLE_SECRET", "")
-            if not client_id or not client_secret:
-                raise RuntimeError(
-                    "AUTH_GOOGLE_ID and AUTH_GOOGLE_SECRET must be set"
-                )
-            creds = mint_access_credentials(
-                refresh_token=refresh_token,
-                client_id=client_id,
-                client_secret=client_secret,
+        refresh_token = read_refresh_token(user_email, path=token_store_path)
+        if refresh_token is None:
+            raise FileNotFoundError(
+                f"No refresh token for {user_email!r} in {token_store_path}"
             )
-            source = GmailSource(creds)
+        client_id = os.environ.get("AUTH_GOOGLE_ID", "")
+        client_secret = os.environ.get("AUTH_GOOGLE_SECRET", "")
+        if not client_id or not client_secret:
+            raise RuntimeError(
+                "AUTH_GOOGLE_ID and AUTH_GOOGLE_SECRET must be set"
+            )
+        creds = mint_access_credentials(
+            refresh_token=refresh_token,
+            client_id=client_id,
+            client_secret=client_secret,
+        )
+        source = GmailSource(creds)
+
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = db.connect(db_path)
 
         fetched = filtered = classified = reused = errors = 0
         now = _utcnow()
@@ -167,7 +170,6 @@ def run_ingestion(
                 )
                 continue
 
-            classified += 1
             try:
                 with conn:
                     db.insert_classification(
@@ -180,6 +182,7 @@ def run_ingestion(
                         truncated=msg.truncated,
                         now=now,
                     )
+                classified += 1  # only after a successful commit
             except sqlite3.DatabaseError as exc:
                 logger.warning(
                     "DB insert_classification failed message_id=%s: %s",
@@ -196,8 +199,12 @@ def run_ingestion(
             now=_utcnow(),
             include_other=False,
         )
-        md = render_markdown(digest)
-        js = render_json(digest)
+
+        try:
+            md = render_markdown(digest)
+            js = render_json(digest)
+        except Exception as exc:
+            raise RuntimeError(f"digest render failed: {exc}") from exc
 
         try:
             digest_id = db.insert_digest(
@@ -234,7 +241,8 @@ def run_ingestion(
         )
 
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 def main() -> int:
