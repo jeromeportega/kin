@@ -28,7 +28,7 @@ from dotenv import load_dotenv
 from app import db
 from app.cli_common import args_for_persistence, resolve_db_path, setup_logging
 from app.classify_email import MODEL, PROMPT_VERSION, classify
-from app.config import load_config
+from app.config import load_effective_config
 from app.email_filters import should_classify
 from app.email_source import FetchedEmail
 from app.exit_codes import (
@@ -105,7 +105,7 @@ def main() -> int:  # noqa: C901 — orchestrator, intentionally linear
     load_dotenv()
 
     try:
-        cfg = load_config(args.config)
+        cfg = load_effective_config(args.user, args.config)
     except FileNotFoundError as exc:
         logger.error("%s", exc)
         return EXIT_CONFIG

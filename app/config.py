@@ -4,6 +4,7 @@ Parses a TOML file into a typed `FilterConfig` with normalized lists.
 The default path is `kin.toml` (gitignored). See `kin.example.toml` for
 the template.
 """
+import os
 import tomllib
 from pathlib import Path
 from typing import List
@@ -56,3 +57,21 @@ def load_config_from_db(conn, user_id: str) -> FilterConfig:
         subject_keywords=grouped.get("subject_keywords", []),
         body_keywords=grouped.get("body_keywords", []),
     )
+
+
+def load_effective_config(user_id: str, file_path: Path | str = "kin.toml") -> FilterConfig:
+    """The config source the pipeline should use.
+
+    Production (``TURSO_DATABASE_URL`` set) reads from the DB; local dev and tests
+    read the TOML file. Selected by the same env var as ``db.connect()``, so the
+    web layer and the pipeline stay consistent within each environment.
+    """
+    if os.environ.get("TURSO_DATABASE_URL"):
+        from app import db
+
+        conn = db.connect("")  # Turso; path ignored
+        try:
+            return load_config_from_db(conn, user_id)
+        finally:
+            conn.close()
+    return load_config(file_path)
