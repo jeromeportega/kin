@@ -20,7 +20,7 @@ export default async function DashboardPage() {
   const [digest, classifications, config] = await Promise.all([
     fetchDigest(userId),
     fetchClassifications(userId, WINDOW_HOURS),
-    readKinConfig(),
+    readKinConfig(userId),
   ])
 
   // Data-derived tuning cadence: surface senders the config doesn't cover yet.

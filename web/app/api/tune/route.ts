@@ -22,11 +22,14 @@ export async function POST(req: Request) {
     Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []
 
   try {
-    const added = await applyTuning({
-      allow: asStrings(body.allow),
-      block: asStrings(body.block),
-      keyword: asStrings(body.keyword),
-    })
+    const added = await applyTuning(
+      {
+        allow: asStrings(body.allow),
+        block: asStrings(body.block),
+        keyword: asStrings(body.keyword),
+      },
+      session.user.email
+    )
     return Response.json({ ok: true, added }, { status: 200 })
   } catch {
     return Response.json({ error: "Failed to update config" }, { status: 500 })

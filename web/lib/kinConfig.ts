@@ -1,6 +1,7 @@
 import "server-only"
 import fs from "fs/promises"
 import path from "path"
+import { usingTurso, turso } from "./db"
 
 // kin.toml is the household filter config the Python pipeline reads (sender
 // allow/blocklists + subject keywords). The tuning UI edits it from the web
@@ -48,7 +49,21 @@ function parse(text: string): KinConfig {
   }
 }
 
-export async function readKinConfig(): Promise<KinConfig> {
+export async function readKinConfig(userId?: string): Promise<KinConfig> {
+  if (usingTurso() && userId) {
+    const rs = await turso().execute({
+      sql: "SELECT kind, value FROM filter_entries WHERE user_id = ? ORDER BY kind, value",
+      args: [userId],
+    })
+    const out: KinConfig = { sender_allowlist: [], sender_blocklist: [], subject_keywords: [] }
+    for (const row of rs.rows) {
+      const kind = String(row.kind)
+      if (kind === "sender_allowlist" || kind === "sender_blocklist" || kind === "subject_keywords") {
+        out[kind].push(String(row.value))
+      }
+    }
+    return out
+  }
   try {
     return parse(await fs.readFile(configPath(), "utf8"))
   } catch (err) {
@@ -84,7 +99,35 @@ export interface TuningPatch {
 
 // Apply a batch of tuning answers, returning the number of NEW entries added per
 // list (deduped, case-insensitive). Atomic write so a partial write never lands.
-export async function applyTuning(patch: TuningPatch): Promise<Record<string, number>> {
+export async function applyTuning(
+  patch: TuningPatch,
+  userId?: string
+): Promise<Record<string, number>> {
+  const additions: Record<string, string[]> = {
+    sender_allowlist: sanitize(patch.allow ?? []),
+    sender_blocklist: sanitize(patch.block ?? []),
+    subject_keywords: sanitize(patch.keyword ?? []),
+  }
+
+  // Production: write to the DB (idempotent per (user, kind, value)). Values are
+  // lowercased to match the pipeline's normalization and the seeded entries.
+  if (usingTurso() && userId) {
+    const added: Record<string, number> = {}
+    for (const key of ARRAY_KEYS) {
+      let n = 0
+      for (const value of additions[key]) {
+        const rs = await turso().execute({
+          sql: "INSERT OR IGNORE INTO filter_entries (user_id, kind, value) VALUES (?, ?, ?)",
+          args: [userId, key, value.toLowerCase()],
+        })
+        if (Number(rs.rowsAffected) > 0) n++
+      }
+      added[key] = n
+    }
+    return added
+  }
+
+  // Local dev: rewrite the three arrays in kin.toml, atomic write.
   const p = configPath()
   let text: string
   try {
@@ -95,12 +138,6 @@ export async function applyTuning(patch: TuningPatch): Promise<Record<string, nu
   }
 
   const current = parse(text)
-  const additions: Record<string, string[]> = {
-    sender_allowlist: sanitize(patch.allow ?? []),
-    sender_blocklist: sanitize(patch.block ?? []),
-    subject_keywords: sanitize(patch.keyword ?? []),
-  }
-
   const added: Record<string, number> = {}
   for (const key of ARRAY_KEYS) {
     const seen = new Set(current[key].map((v) => v.toLowerCase()))
