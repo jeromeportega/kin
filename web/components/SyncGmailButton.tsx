@@ -35,13 +35,27 @@ export function SyncGmailButton() {
 
   if (state === "reauth") {
     return (
-      <Button
-        onClick={() =>
-          signIn("google", { callbackUrl: "/dashboard" }, { prompt: "consent", access_type: "offline" })
-        }
-      >
-        Re-authenticate with Google
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          onClick={() =>
+            signIn("google", { callbackUrl: "/dashboard" }, { prompt: "consent", access_type: "offline" })
+          }
+        >
+          Re-authenticate with Google
+        </Button>
+        <Button variant="outline" onClick={() => setState("idle")}>
+          Cancel
+        </Button>
+      </div>
+    )
+  }
+
+  if (state === "error") {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-destructive">Sync failed — please try again</span>
+        <Button onClick={handleSync}>Sync my Gmail</Button>
+      </div>
     )
   }
 

@@ -111,4 +111,40 @@ describe("POST /api/sync", () => {
 
     expect(mockRevalidatePath).not.toHaveBeenCalled()
   })
+
+  // ─── 401 structured body ─────────────────────────────────────────────────
+
+  it("returns a JSON error body on 401", async () => {
+    mockAuth.mockResolvedValueOnce(null)
+
+    const res = await POST()
+
+    expect(res.status).toBe(401)
+    const body = await res.json()
+    expect(body).toHaveProperty("error")
+  })
+
+  // ─── concurrency guard: 429 when same user already in flight ─────────────
+
+  it("returns 429 when a sync is already in progress for the same user", async () => {
+    mockAuth.mockResolvedValueOnce({ user: { email: "user@example.com" } })
+    mockAuth.mockResolvedValueOnce({ user: { email: "user@example.com" } })
+
+    let resolveFirst!: (code: number) => void
+    mockSpawnIngestion.mockReturnValueOnce(new Promise<number>((r) => { resolveFirst = r }))
+
+    // Start first sync; it will be suspended at await spawnIngestion()
+    const firstPromise = POST()
+    // Flush one microtask so the first POST advances past inFlight.add()
+    await Promise.resolve()
+
+    const secondResponse = await POST()
+    expect(secondResponse.status).toBe(429)
+    const body = await secondResponse.json()
+    expect(body).toHaveProperty("error")
+
+    // Clean up: resolve the first sync
+    resolveFirst(0)
+    await firstPromise
+  })
 })

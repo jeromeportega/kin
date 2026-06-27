@@ -123,4 +123,44 @@ describe("SyncGmailButton", () => {
     // Resolve to avoid dangling promise
     resolveSync(new Response(JSON.stringify({ ok: true }), { status: 200 }))
   })
+
+  // ─── error state: shows message and retry button ──────────────────────────
+
+  it("shows error message and retry button on 500 error", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: false }), { status: 500 })
+    )
+
+    render(<SyncGmailButton />)
+    fireEvent.click(screen.getByRole("button", { name: "Sync my Gmail" }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/sync failed/i)).toBeInTheDocument()
+    })
+    expect(screen.getByRole("button", { name: "Sync my Gmail" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /re-authenticate/i })).not.toBeInTheDocument()
+  })
+
+  // ─── reauth state: cancel returns to idle ────────────────────────────────
+
+  it("shows Cancel in reauth state and returns to idle when clicked", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ reauth: true }), { status: 409 })
+    )
+
+    render(<SyncGmailButton />)
+    fireEvent.click(screen.getByRole("button", { name: "Sync my Gmail" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /cancel/i })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Sync my Gmail" })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole("button", { name: /cancel/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /re-authenticate/i })).not.toBeInTheDocument()
+  })
 })
