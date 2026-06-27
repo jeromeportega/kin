@@ -1,10 +1,17 @@
+import { redirect } from "next/navigation"
 import { resolveScope } from "@/lib/scope"
 import { fetchDigest } from "@/lib/api"
 import { DigestView } from "@/components/digest/DigestView"
 import { EmptyState } from "@/components/digest/EmptyState"
 
 export default async function DashboardPage() {
-  const userId = await resolveScope()
+  let userId: string
+  try {
+    userId = await resolveScope()
+  } catch {
+    redirect("/signin")
+  }
+
   const digest = await fetchDigest(userId)
 
   return (

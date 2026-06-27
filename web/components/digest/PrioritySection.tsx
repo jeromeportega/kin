@@ -34,7 +34,7 @@ export function PrioritySection({ priority, items }: PrioritySectionProps) {
 
   return (
     <AccordionItem value={priority}>
-      <AccordionTrigger aria-label={PRIORITY_LABELS[priority]}>
+      <AccordionTrigger>
         {PRIORITY_LABELS[priority]}
       </AccordionTrigger>
       <AccordionContent>

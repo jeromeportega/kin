@@ -252,8 +252,8 @@ import { EmptyState } from "@/components/digest/EmptyState"
 describe("EmptyState", () => {
   it("renders a clear empty-state message", () => {
     render(<EmptyState />)
-    expect(screen.getByRole("status")).toBeInTheDocument()
     expect(screen.getByText(/no digest yet/i)).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: /no digest/i })).toBeInTheDocument()
   })
 
   it("does not render error UI", () => {
@@ -291,8 +291,8 @@ describe("DashboardPage — empty state (fetchDigest mocked to null)", () => {
     const jsx = await DashboardPage()
     render(jsx)
 
-    expect(screen.getByRole("status")).toBeInTheDocument()
     expect(screen.getByText(/no digest yet/i)).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: /no digest/i })).toBeInTheDocument()
   })
 
   it("does not render error UI when fetchDigest returns null", async () => {
@@ -312,6 +312,6 @@ describe("DashboardPage — empty state (fetchDigest mocked to null)", () => {
 
     expect(screen.getByText("Classified")).toBeInTheDocument()
     expect(screen.getByText("High Priority")).toBeInTheDocument()
-    expect(screen.queryByRole("status")).not.toBeInTheDocument()
+    expect(screen.queryByText(/no digest yet/i)).not.toBeInTheDocument()
   })
 })
