@@ -576,6 +576,48 @@ def fetch_digest_json(
     return row["json_payload"] if row else None
 
 
+def fetch_runs(
+    conn: sqlite3.Connection,
+    *,
+    user_id: str,
+    limit: int = 20,
+) -> list[dict]:
+    """Most-recent triage runs for a user, newest first. SELECT-only.
+
+    Uses idx_runs_user_started. Excludes the `args` blob (ADR-006).
+    """
+    return [
+        {
+            "id": r["id"],
+            "user_id": r["user_id"],
+            "started_at": r["started_at"],
+            "ended_at": r["ended_at"],
+            "hours": r["hours"],
+            "limit_n": r["limit_n"],
+            "model": r["model"],
+            "prompt_version": r["prompt_version"],
+            "fetched": r["fetched"],
+            "filtered": r["filtered"],
+            "classified": r["classified"],
+            "reused": r["reused"],
+            "errors": r["errors"],
+            "truncated": r["truncated"],
+        }
+        for r in conn.execute(
+            """
+            SELECT id, user_id, started_at, ended_at, hours, limit_n,
+                   model, prompt_version, fetched, filtered, classified,
+                   reused, errors, truncated
+            FROM runs
+            WHERE user_id = ?
+            ORDER BY started_at DESC
+            LIMIT ?
+            """,
+            (user_id, limit),
+        )
+    ]
+
+
 def insert_digest(
     conn: sqlite3.Connection,
     *,
