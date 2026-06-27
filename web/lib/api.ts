@@ -7,9 +7,14 @@ function baseUrl(): string {
   return url
 }
 
+const FETCH_OPTIONS: RequestInit = {
+  cache: "no-store",
+  signal: AbortSignal.timeout(5000),
+}
+
 export async function fetchDigest(userId: string): Promise<Digest | null> {
   const url = `${baseUrl()}/api/digest/latest?user_id=${encodeURIComponent(userId)}`
-  const res = await fetch(url)
+  const res = await fetch(url, FETCH_OPTIONS)
   if (res.status === 204) return null
   if (!res.ok) throw new Error(`fetchDigest failed: ${res.status}`)
   const data: Digest = await res.json()
@@ -21,8 +26,11 @@ export async function fetchClassifications(
   userId: string,
   hours: number
 ): Promise<Classification[]> {
+  if (!Number.isInteger(hours) || hours <= 0) {
+    throw new Error("hours must be a positive integer")
+  }
   const url = `${baseUrl()}/api/classifications?user_id=${encodeURIComponent(userId)}&hours=${hours}`
-  const res = await fetch(url)
+  const res = await fetch(url, FETCH_OPTIONS)
   if (!res.ok) throw new Error(`fetchClassifications failed: ${res.status}`)
   return res.json()
 }

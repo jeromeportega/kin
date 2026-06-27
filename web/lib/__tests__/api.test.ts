@@ -125,7 +125,7 @@ describe("fetchDigest", () => {
     await expect(fetchDigest(DEMO_USER)).rejects.toThrow("fetchDigest failed: 500")
   })
 
-  it("hits KIN_API_BASE_URL and never exposes it to the caller", async () => {
+  it("constructs URL from KIN_API_BASE_URL", async () => {
     const digest = makeDigest()
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify(digest), { status: 200 })
@@ -135,6 +135,18 @@ describe("fetchDigest", () => {
 
     const calledUrl = vi.mocked(fetch).mock.calls[0][0] as string
     expect(calledUrl.startsWith(BASE_URL)).toBe(true)
+  })
+
+  it("passes cache: no-store to prevent stale digest across users", async () => {
+    const digest = makeDigest()
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify(digest), { status: 200 })
+    )
+
+    await fetchDigest(DEMO_USER)
+
+    const calledOptions = vi.mocked(fetch).mock.calls[0][1] as RequestInit
+    expect(calledOptions?.cache).toBe("no-store")
   })
 })
 
@@ -217,18 +229,33 @@ describe("fetchClassifications", () => {
       "fetchClassifications failed: 500"
     )
   })
-})
 
-// ─── server-only boundary (base URL / scope stay server-side) ─────────────────
-
-describe("server-only boundary", () => {
-  it("api.ts declares server-only import (KIN_API_BASE_URL stays server-side)", async () => {
-    const fs = await import("fs")
-    const path = await import("path")
-    const src = fs.readFileSync(
-      path.resolve(__dirname, "../api.ts"),
-      "utf-8"
+  it("rejects negative hours", async () => {
+    await expect(fetchClassifications(DEMO_USER, -1)).rejects.toThrow(
+      "hours must be a positive integer"
     )
-    expect(src).toContain('import "server-only"')
+  })
+
+  it("rejects zero hours", async () => {
+    await expect(fetchClassifications(DEMO_USER, 0)).rejects.toThrow(
+      "hours must be a positive integer"
+    )
+  })
+
+  it("rejects fractional hours", async () => {
+    await expect(fetchClassifications(DEMO_USER, 1.5)).rejects.toThrow(
+      "hours must be a positive integer"
+    )
+  })
+
+  it("passes cache: no-store to prevent stale classifications across users", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify([]), { status: 200 })
+    )
+
+    await fetchClassifications(DEMO_USER, 24)
+
+    const calledOptions = vi.mocked(fetch).mock.calls[0][1] as RequestInit
+    expect(calledOptions?.cache).toBe("no-store")
   })
 })

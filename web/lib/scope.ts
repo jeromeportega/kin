@@ -1,3 +1,4 @@
+import "server-only"
 import { auth } from "@/auth"
 
 export async function resolveScope(): Promise<string> {
@@ -9,5 +10,6 @@ export async function resolveScope(): Promise<string> {
   if (!demoUser) {
     throw new Error("KIN_DEMO_USER is not configured")
   }
+  // POC: all authenticated users are mapped to a single demo scope — replace with session.user.id before production
   return demoUser
 }

@@ -39,7 +39,7 @@ export interface Classification {
   model: string
   prompt_version: string
   category: string
-  priority: string
+  priority: "low" | "medium" | "high"
   action_required: boolean
   summary: string
   action_items: string[]
