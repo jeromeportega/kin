@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 
 from app import db
 from app.classify_email import MODEL, PROMPT_VERSION, classify
-from app.config import load_config
+from app.config import load_effective_config
 from app.digest import build_digest, render_json, render_markdown
 from app.email_filters import should_classify
 from app.email_source import EmailSource, FetchedEmail
@@ -92,7 +92,7 @@ def run_ingestion(
     sqlite3.DatabaseError — `main()` maps each to an EXIT_* code.
     """
     try:
-        cfg = load_config(config_path)
+        cfg = load_effective_config(user_email, config_path)
     except FileNotFoundError:
         raise
     except Exception as exc:
@@ -103,9 +103,9 @@ def run_ingestion(
     if source is None:
         from ingest.gmail_source import GmailSource
         from ingest.oauth import mint_access_credentials
-        from ingest.token_store import read_refresh_token
+        from ingest.token_store import read_effective_refresh_token
 
-        refresh_token = read_refresh_token(user_email, path=token_store_path)
+        refresh_token = read_effective_refresh_token(user_email, path=token_store_path)
         if refresh_token is None:
             raise FileNotFoundError(
                 f"No refresh token for {user_email!r} in {token_store_path}"
