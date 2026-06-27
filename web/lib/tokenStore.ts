@@ -1,6 +1,7 @@
 import fs from "fs/promises"
 import path from "path"
 import { randomBytes } from "crypto"
+import { usingTurso, turso } from "./db"
 
 // SECURITY NOTE: Refresh tokens are stored in plaintext JSON at mode 0600.
 // A Gmail refresh_token grants long-term read access to a user's inbox.
@@ -113,10 +114,30 @@ export async function writeRefreshToken(
   email: string,
   refreshToken: string
 ): Promise<void> {
+  if (usingTurso()) {
+    await turso().execute({
+      sql: `INSERT INTO gmail_tokens (email, refresh_token, scope, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (email) DO UPDATE SET
+              refresh_token = excluded.refresh_token,
+              scope = excluded.scope,
+              updated_at = excluded.updated_at`,
+      args: [email, refreshToken, GMAIL_SCOPE, new Date().toISOString()],
+    })
+    return
+  }
   await doWrite(email, refreshToken)
 }
 
 export async function readRefreshToken(email: string): Promise<string | null> {
+  if (usingTurso()) {
+    const rs = await turso().execute({
+      sql: "SELECT refresh_token FROM gmail_tokens WHERE email = ?",
+      args: [email],
+    })
+    const value = rs.rows[0]?.refresh_token
+    return value == null ? null : String(value)
+  }
   const storePath = tokenStorePath()
   try {
     const content = await fs.readFile(storePath, "utf-8")
