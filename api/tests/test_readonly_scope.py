@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 import app.db as db
-from api.deps import get_ro_conn
+from app.cli_common import connect_db_ro
 from app.digest import Digest
 
 
@@ -120,29 +120,21 @@ def _seed_run(db_path: Path, user_id: str) -> int:
 # ---------------------------------------------------------------------------
 
 class TestReadOnlyEnforcement:
-    """The connection yielded by get_ro_conn must reject all writes at the VFS level.
+    """The connection opened by connect_db_ro must reject all writes at the VFS level.
 
     SQLite opens the file with mode=ro in the URI, which causes the engine itself
     to raise OperationalError("attempt to write a readonly database") on any
     mutation. Application code never runs a check of its own, so the error
     message is a reliable proxy for 'this came from SQLite, not from us'.
+
+    These tests call connect_db_ro directly (the same function get_ro_conn uses
+    internally) so they are decoupled from FastAPI's DI layer. The DI wiring
+    itself is verified separately in TestReadOnlyEnforcementDIWiring.
     """
-
-    def _borrow_conn(self, db_path: Path):
-        """Advance get_ro_conn's generator to obtain the live connection and generator."""
-        gen = get_ro_conn(db_path)
-        conn = next(gen)
-        return conn, gen
-
-    def _return_conn(self, gen) -> None:
-        try:
-            next(gen)
-        except StopIteration:
-            pass
 
     def test_insert_raises_operational_error(self, seeded_db_path):
         """INSERT through the API's read-only connection must raise sqlite3.OperationalError."""
-        conn, gen = self._borrow_conn(seeded_db_path)
+        conn = connect_db_ro(seeded_db_path, expected_schema_version=db.SCHEMA_VERSION)
         try:
             with pytest.raises(sqlite3.OperationalError) as exc_info:
                 conn.execute(
@@ -150,11 +142,11 @@ class TestReadOnlyEnforcement:
                 )
             assert "readonly" in str(exc_info.value).lower()
         finally:
-            self._return_conn(gen)
+            conn.close()
 
     def test_update_raises_operational_error(self, seeded_db_path):
         """UPDATE through the API's read-only connection must raise sqlite3.OperationalError."""
-        conn, gen = self._borrow_conn(seeded_db_path)
+        conn = connect_db_ro(seeded_db_path, expected_schema_version=db.SCHEMA_VERSION)
         try:
             with pytest.raises(sqlite3.OperationalError) as exc_info:
                 conn.execute(
@@ -162,7 +154,7 @@ class TestReadOnlyEnforcement:
                 )
             assert "readonly" in str(exc_info.value).lower()
         finally:
-            self._return_conn(gen)
+            conn.close()
 
     def test_error_originates_from_sqlite_not_application_code(self, seeded_db_path):
         """The OperationalError message is SQLite's own 'attempt to write a readonly database'.
@@ -171,13 +163,13 @@ class TestReadOnlyEnforcement:
         guard: app checks would raise a different exception or message, not SQLite's
         internal readonly error.
         """
-        conn, gen = self._borrow_conn(seeded_db_path)
+        conn = connect_db_ro(seeded_db_path, expected_schema_version=db.SCHEMA_VERSION)
         try:
             with pytest.raises(sqlite3.OperationalError) as exc_info:
                 conn.execute("DELETE FROM _meta WHERE key = 'schema_version'")
             assert "attempt to write a readonly database" in str(exc_info.value).lower()
         finally:
-            self._return_conn(gen)
+            conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -355,3 +347,14 @@ class TestReadOnlyEnforcementDIWiring:
                 "handlers must remain GET-only so the RO connection is never asked "
                 "to perform mutations via the HTTP layer"
             )
+
+        # Confirm every expected path was actually registered; without this the
+        # loop above passes vacuously if a route is renamed or removed.
+        matched = {
+            r.path
+            for r in fastapi_app.routes
+            if hasattr(r, "path") and r.path in data_paths
+        }
+        assert matched == data_paths, (
+            f"Expected routes not registered: {data_paths - matched}"
+        )
