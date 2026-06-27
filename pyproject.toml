@@ -22,4 +22,4 @@ dev = [
 include = ["app*"]
 
 [tool.uv.workspace]
-members = ["api"]
+members = ["api", "ingest"]
