@@ -27,7 +27,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async jwt({ token, account }) {
       if (account?.refresh_token && token.email) {
-        await writeRefreshToken(token.email, account.refresh_token)
+        try {
+          await writeRefreshToken(token.email, account.refresh_token)
+        } catch (err) {
+          console.error("tokenStore write failed", err)
+        }
       }
       return token
     },

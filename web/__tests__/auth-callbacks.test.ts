@@ -85,6 +85,19 @@ describe("auth.ts callbacks", () => {
       expect(mockWriteRefreshToken).not.toHaveBeenCalled()
       expect(result).toEqual(token)
     })
+
+    it("returns token and does not throw when writeRefreshToken rejects (storage failure)", async () => {
+      mockWriteRefreshToken.mockRejectedValueOnce(new Error("disk full"))
+
+      const token = { email: "user@example.com", sub: "123" }
+      const account = { refresh_token: "rt_abc123", provider: "google" }
+
+      // Must not throw — storage failures degrade gracefully
+      const result = await capturedCallbacks.current.jwt({ token, account })
+
+      expect(mockWriteRefreshToken).toHaveBeenCalledOnce()
+      expect(result).toEqual(token)
+    })
   })
 
   // ─── session callback ──────────────────────────────────────────────────────

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import fs from "fs/promises"
 import path from "path"
 import os from "os"
-import { writeRefreshToken } from "@/lib/tokenStore"
+import { writeRefreshToken, readRefreshToken } from "@/lib/tokenStore"
 
 let tmpDir: string
 let tmpFile: string
@@ -25,7 +25,7 @@ async function readStore(): Promise<Record<string, any>> {
   return JSON.parse(content)
 }
 
-// ─── happy path ──────────────────────────────────────────────────────────────
+// ─── writeRefreshToken ────────────────────────────────────────────────────────
 
 describe("writeRefreshToken", () => {
   it("creates the token store file with mode 0600", async () => {
@@ -69,13 +69,17 @@ describe("writeRefreshToken", () => {
     const storeAfterFirst = await readStore()
     const firstUpdatedAt = storeAfterFirst["alice@example.com"].updated_at
 
+    // Ensure at least 1ms passes so updated_at can differ
+    await new Promise((r) => setTimeout(r, 5))
+
     await writeRefreshToken("alice@example.com", "rt_new")
     const storeAfterSecond = await readStore()
     const entry = storeAfterSecond["alice@example.com"]
 
     expect(entry.refresh_token).toBe("rt_new")
-    // updated_at must change (or at minimum the token changes)
-    expect(entry.refresh_token).not.toBe("rt_old")
+    expect(new Date(entry.updated_at).getTime()).toBeGreaterThanOrEqual(
+      new Date(firstUpdatedAt).getTime()
+    )
   })
 
   it("keeps other users' entries when updating one user", async () => {
@@ -86,6 +90,30 @@ describe("writeRefreshToken", () => {
     const store = await readStore()
     expect(store["bob@example.com"]?.refresh_token).toBe("rt_bob")
     expect(store["alice@example.com"]?.refresh_token).toBe("rt_alice_v2")
+  })
+
+  it("handles a corrupt store file (invalid JSON) by starting fresh", async () => {
+    await fs.writeFile(tmpFile, "not valid json", { mode: 0o600 })
+    await writeRefreshToken("alice@example.com", "rt_alice")
+
+    const store = await readStore()
+    expect(store["alice@example.com"]?.refresh_token).toBe("rt_alice")
+  })
+
+  it("handles a store file containing non-object JSON (null) by starting fresh", async () => {
+    await fs.writeFile(tmpFile, "null", { mode: 0o600 })
+    await writeRefreshToken("alice@example.com", "rt_alice")
+
+    const store = await readStore()
+    expect(store["alice@example.com"]?.refresh_token).toBe("rt_alice")
+  })
+
+  it("handles a store file containing a JSON array by starting fresh", async () => {
+    await fs.writeFile(tmpFile, "[]", { mode: 0o600 })
+    await writeRefreshToken("alice@example.com", "rt_alice")
+
+    const store = await readStore()
+    expect(store["alice@example.com"]?.refresh_token).toBe("rt_alice")
   })
 
   // ─── round-trip readback (AC4) ────────────────────────────────────────────
@@ -109,5 +137,53 @@ describe("writeRefreshToken", () => {
     expect(store["user@example.com"].scope).not.toContain("gmail.modify")
     expect(store["user@example.com"].scope).not.toContain("gmail.send")
     expect(store["user@example.com"].scope).not.toContain("https://mail.google.com/")
+  })
+
+  // ─── concurrent write serialization ─────────────────────────────────────
+
+  it("serializes concurrent writes — all entries survive racing calls", async () => {
+    await Promise.all([
+      writeRefreshToken("userA@example.com", "rt_A"),
+      writeRefreshToken("userB@example.com", "rt_B"),
+      writeRefreshToken("userC@example.com", "rt_C"),
+    ])
+
+    const store = await readStore()
+    expect(store["userA@example.com"]?.refresh_token).toBe("rt_A")
+    expect(store["userB@example.com"]?.refresh_token).toBe("rt_B")
+    expect(store["userC@example.com"]?.refresh_token).toBe("rt_C")
+  })
+})
+
+// ─── readRefreshToken ─────────────────────────────────────────────────────────
+
+describe("readRefreshToken", () => {
+  it("returns the persisted refresh_token for a known email", async () => {
+    await writeRefreshToken("user@example.com", "rt_readable")
+    const token = await readRefreshToken("user@example.com")
+    expect(token).toBe("rt_readable")
+  })
+
+  it("returns null for an email not in the store", async () => {
+    await writeRefreshToken("someone@example.com", "rt_someone")
+    const token = await readRefreshToken("other@example.com")
+    expect(token).toBeNull()
+  })
+
+  it("returns null when the store file does not exist", async () => {
+    const token = await readRefreshToken("nobody@example.com")
+    expect(token).toBeNull()
+  })
+
+  it("returns null when the store contains invalid JSON", async () => {
+    await fs.writeFile(tmpFile, "not valid json", { mode: 0o600 })
+    const token = await readRefreshToken("user@example.com")
+    expect(token).toBeNull()
+  })
+
+  it("returns null when the store contains non-object JSON", async () => {
+    await fs.writeFile(tmpFile, "null", { mode: 0o600 })
+    const token = await readRefreshToken("user@example.com")
+    expect(token).toBeNull()
   })
 })
