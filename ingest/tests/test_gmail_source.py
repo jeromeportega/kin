@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from app.email_source import FetchedEmail
+from app.email_source import EmailSource, FetchedEmail
 from ingest.gmail_source import (
     MAX_BODY_CHARS,
     GmailSource,
@@ -55,6 +55,23 @@ def test_mapping_returns_fetched_email_instance():
     assert isinstance(fetched, FetchedEmail)
 
 
+def test_mapping_to_and_cc_addrs_lowercased():
+    """to_addrs and cc_addrs are lowercased, consistent with from_addr."""
+    msg = make_gmail_message(to="BOB@EXAMPLE.COM", cc="CAROL@EXAMPLE.COM")
+    fetched = _to_gmail_fetched(msg)
+    assert "bob@example.com" in fetched.to_addrs
+    assert "carol@example.com" in fetched.cc_addrs
+
+
+def test_mapping_rfc5322_comma_in_display_name():
+    """Display name containing a comma produces one address, not two."""
+    msg = make_gmail_message(to='"Smith, John" <john@example.com>')
+    fetched = _to_gmail_fetched(msg)
+    # Naive comma-split would yield two broken tokens instead of one address
+    assert len(fetched.to_addrs) == 1
+    assert "john@example.com" in fetched.to_addrs[0]
+
+
 # ---------------------------------------------------------------------------
 # Body rules
 # ---------------------------------------------------------------------------
@@ -71,6 +88,15 @@ def test_body_html_stripped_when_no_plain():
     assert "Hello" in fetched.text_body
     assert "world" in fetched.text_body
     assert "<" not in fetched.text_body
+
+
+def test_body_html_entities_decoded():
+    """HTML character entities are decoded in the stripped body."""
+    msg = make_gmail_message(plain_body="", html_body="<p>Hello &amp; World &lt;tag&gt;</p>")
+    fetched = _to_gmail_fetched(msg)
+    assert "&amp;" not in fetched.text_body
+    assert "&lt;" not in fetched.text_body
+    assert "Hello & World <tag>" in fetched.text_body
 
 
 def test_body_truncated_at_4000_chars():
@@ -105,6 +131,15 @@ def test_message_id_fallback_when_header_absent():
 
 
 # ---------------------------------------------------------------------------
+# GmailSource — class contract
+# ---------------------------------------------------------------------------
+
+def test_gmail_source_implements_email_source():
+    """GmailSource must explicitly inherit from EmailSource (declared in class header)."""
+    assert EmailSource in GmailSource.__mro__
+
+
+# ---------------------------------------------------------------------------
 # fetch_recent contract
 # ---------------------------------------------------------------------------
 
@@ -122,7 +157,6 @@ def _make_mock_service(messages=None, full_msg=None):
 
 def test_fetch_recent_passes_bounded_window_and_limit(monkeypatch):
     """list() is called with after:<epoch> and maxResults=limit."""
-    import time
     from datetime import datetime, timedelta, timezone as tz
 
     fake_service = _make_mock_service(messages=[])
@@ -138,10 +172,22 @@ def test_fetch_recent_passes_bounded_window_and_limit(monkeypatch):
     assert call_kwargs["maxResults"] == 10
     q = call_kwargs["q"]
     assert q.startswith("after:")
-    # epoch in q should be within 60s of expected
     epoch_in_q = int(q.split(":")[1])
     expected_epoch = int((datetime.now(tz.utc) - timedelta(hours=24)).timestamp())
     assert abs(epoch_in_q - expected_epoch) < 60
+
+
+def test_fetch_recent_uses_folder_not_hardcoded_inbox():
+    """fetch_recent passes self._folder as the labelIds, not a hardcoded 'INBOX'."""
+    fake_service = _make_mock_service(messages=[])
+    src = GmailSource.__new__(GmailSource)
+    src._service = fake_service
+    src._folder = "SENT"
+
+    list(src.fetch_recent(hours=24, limit=10))
+
+    call_kwargs = fake_service.users.return_value.messages.return_value.list.call_args[1]
+    assert call_kwargs["labelIds"] == ["SENT"]
 
 
 def test_fetch_recent_calls_get_per_message():
@@ -177,6 +223,34 @@ def test_fetch_recent_yields_fetched_email_objects():
     results = list(src.fetch_recent(hours=24, limit=50))
     assert len(results) == 1
     assert isinstance(results[0], FetchedEmail)
+
+
+def test_fetch_recent_skips_404_message_and_continues():
+    """If a message is deleted between list() and get(), it is skipped (not an error)."""
+    from googleapiclient.errors import HttpError
+
+    good_msg = make_gmail_message(msg_id="m2")
+
+    svc = MagicMock()
+    msgs_resource = svc.users.return_value.messages.return_value
+    msgs_resource.list.return_value.execute.return_value = {
+        "messages": [{"id": "m1"}, {"id": "m2"}]
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.status = 404
+    http_404 = HttpError(resp=mock_resp, content=b"Not Found")
+
+    # First get() raises 404, second returns the good message
+    msgs_resource.get.return_value.execute.side_effect = [http_404, good_msg]
+
+    src = GmailSource.__new__(GmailSource)
+    src._service = svc
+    src._folder = "INBOX"
+
+    results = list(src.fetch_recent(hours=24, limit=50))
+    assert len(results) == 1
+    assert results[0].uid == "m2"
 
 
 # ---------------------------------------------------------------------------

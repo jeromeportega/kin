@@ -9,11 +9,13 @@ import base64
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from email.utils import parsedate_to_datetime
+from email.utils import formataddr, getaddresses, parsedate_to_datetime
+from html import unescape as html_unescape
 from typing import Iterator
 
 import google.oauth2.credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 from app.email_source import EmailSource, FetchedEmail
 
@@ -25,9 +27,10 @@ _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
-def _strip_html(html: str) -> str:
-    text = _HTML_TAG_RE.sub(" ", html)
-    return _WHITESPACE_RE.sub(" ", text).strip()
+def _strip_html(html_text: str) -> str:
+    text = _HTML_TAG_RE.sub(" ", html_text)
+    text = _WHITESPACE_RE.sub(" ", text).strip()
+    return html_unescape(text)
 
 
 def _decode_b64url(data: str) -> str:
@@ -67,9 +70,18 @@ def _header(headers: list[dict], name: str) -> str:
 
 
 def _parse_addrs(raw: str) -> tuple[str, ...]:
+    """Parse an RFC 5322 address list, returning lowercased formatted strings.
+
+    Uses email.utils.getaddresses to correctly handle display names that
+    contain commas (e.g. "Smith, John <john@example.com>").
+    """
     if not raw:
         return ()
-    return tuple(a.strip() for a in raw.split(",") if a.strip())
+    return tuple(
+        formataddr((name, addr)).lower()
+        for name, addr in getaddresses([raw])
+        if addr
+    )
 
 
 def _parse_date(raw: str, internal_ms: str = "") -> datetime:
@@ -123,7 +135,7 @@ def _to_gmail_fetched(msg: dict) -> FetchedEmail:
     )
 
 
-class GmailSource:
+class GmailSource(EmailSource):
     """EmailSource backed by the Gmail REST API."""
 
     def __init__(
@@ -148,7 +160,7 @@ class GmailSource:
             .messages()
             .list(
                 userId="me",
-                labelIds=["INBOX"],
+                labelIds=[self._folder],
                 q=f"after:{epoch}",
                 maxResults=limit,
             )
@@ -156,10 +168,19 @@ class GmailSource:
         )
 
         for msg_ref in result.get("messages", []):
-            full_msg = (
-                self._service.users()
-                .messages()
-                .get(userId="me", id=msg_ref["id"], format="full")
-                .execute()
-            )
+            try:
+                full_msg = (
+                    self._service.users()
+                    .messages()
+                    .get(userId="me", id=msg_ref["id"], format="full")
+                    .execute()
+                )
+            except HttpError as exc:
+                if exc.resp.status == 404:
+                    logger.warning(
+                        "Message %s not found (deleted between list and get), skipping",
+                        msg_ref["id"],
+                    )
+                    continue
+                raise
             yield _to_gmail_fetched(full_msg)

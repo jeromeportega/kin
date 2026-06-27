@@ -11,6 +11,6 @@ def read_refresh_token(email: str, *, path: Path) -> str | None:
     """
     try:
         data = json.loads(path.read_text())
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError):
         return None
     return data.get(email, {}).get("refresh_token")
