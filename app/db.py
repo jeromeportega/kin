@@ -14,6 +14,7 @@ All write functions take a `sqlite3.Connection` and expect the caller to
 manage transactions — typically `with conn:` per logical unit.
 """
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -152,7 +153,19 @@ CREATE INDEX IF NOT EXISTS idx_class_classified_at ON classifications (classifie
 
 
 def connect(path: Path | str) -> sqlite3.Connection:
-    """Open the DB, set pragmas (WAL + foreign keys), and run init_schema."""
+    """Open the DB, set pragmas (WAL + foreign keys), and run init_schema.
+
+    When ``TURSO_DATABASE_URL`` is set (prod / Vercel), connect to Turso (hosted
+    libSQL) via the adapter in ``app.turso`` instead — ``path`` is ignored and
+    the SQLite-only pragmas don't apply (Turso manages durability server-side).
+    """
+    url = os.environ.get("TURSO_DATABASE_URL")
+    if url:
+        from app.turso import connect as _turso_connect
+
+        conn = _turso_connect(url, os.environ.get("TURSO_AUTH_TOKEN", ""))
+        init_schema(conn)
+        return conn
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")

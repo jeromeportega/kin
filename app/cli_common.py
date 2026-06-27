@@ -30,12 +30,37 @@ def setup_logging() -> None:
 
 
 def connect_db_ro(path: Path, *, expected_schema_version: str) -> sqlite3.Connection:
-    """Open the DB read-only via SQLite's URI form.
+    """Open the DB read-only and verify its schema version.
 
     Verifies `_meta.schema_version` equals `expected_schema_version`; raises
     `RuntimeError` on mismatch so the caller can map it to `EXIT_DB`.
-    Raises `sqlite3.OperationalError` if the file is missing or unreadable.
+
+    When `TURSO_DATABASE_URL` is set (prod / Vercel), connect to Turso instead —
+    using `TURSO_AUTH_TOKEN_RO` if provided (a read-only token preserves the
+    read-only guarantee), else the standard token. `path` is ignored.
+    Raises `sqlite3.OperationalError` if a local file is missing or unreadable.
     """
+    url = os.environ.get("TURSO_DATABASE_URL")
+    if url:
+        from app.turso import connect as _turso_connect
+
+        token = os.environ.get("TURSO_AUTH_TOKEN_RO") or os.environ.get("TURSO_AUTH_TOKEN", "")
+        conn = _turso_connect(url, token)
+        row = conn.execute(
+            "SELECT value FROM _meta WHERE key = 'schema_version'"
+        ).fetchone()
+        if row is None:
+            conn.close()
+            raise RuntimeError("Turso DB is missing _meta.schema_version")
+        if row["value"] != expected_schema_version:
+            conn.close()
+            raise RuntimeError(
+                f"DB schema_version is {row['value']!r}, expected "
+                f"{expected_schema_version!r}; re-run a writeable command (e.g. triage) "
+                "to migrate."
+            )
+        return conn
+
     if not path.exists():
         raise sqlite3.OperationalError(f"DB not found at {path}")
     uri = f"file:{path}?mode=ro"
