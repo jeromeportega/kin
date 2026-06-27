@@ -2,9 +2,9 @@
 
 These run offline in the gate: a fake libsql client backed by in-memory sqlite3
 stands in for the real ClientSync, so we exercise the adapter's translation
-logic (execute routing, executescript, `with conn:` transactions, lastrowid,
-name-accessible rows) without hitting the network. A separate live smoke test
-against real Turso is run manually (see scripts/turso_smoke.py).
+logic (execute autocommit, executemany/executescript via batch, name-accessible
+rows, lastrowid, sqlite3 error mapping) without hitting the network. A separate
+live smoke against real Turso is run manually (scripts/turso_smoke.py).
 """
 import sqlite3
 
@@ -29,23 +29,6 @@ def _result(cur):
     return r
 
 
-class _FakeTx:
-    def __init__(self, conn):
-        self._conn = conn
-
-    def execute(self, sql, args=None):
-        return _result(self._conn.execute(sql, list(args) if args else []))
-
-    def commit(self):
-        self._conn.commit()
-
-    def rollback(self):
-        self._conn.rollback()
-
-    def close(self):
-        pass
-
-
 class _FakeClient:
     """Mimics libsql-client ClientSync, backed by a single in-memory sqlite3."""
 
@@ -58,12 +41,13 @@ class _FakeClient:
         self._conn.commit()
         return _result(cur)
 
-    def transaction(self):
-        return _FakeTx(self._conn)
-
     def batch(self, stmts):
         for s in stmts:
-            self._conn.execute(s)
+            if isinstance(s, tuple):
+                sql, args = s
+                self._conn.execute(sql, list(args) if args else [])
+            else:
+                self._conn.execute(s)
         self._conn.commit()
 
     def close(self):
@@ -102,22 +86,17 @@ def test_lastrowid_after_insert(conn):
     assert cur.lastrowid == 1
 
 
-def test_with_conn_commits_on_success(conn):
+def test_with_conn_autocommits(conn):
+    # The HTTP transport has no interactive transactions; `with conn:` is a no-op
+    # and statements autocommit (see app/turso.py).
     with conn:
         conn.execute("INSERT INTO t (name) VALUES (?)", ("carol",))
     assert conn.execute("SELECT COUNT(*) FROM t").fetchone()[0] == 1
 
 
-def test_with_conn_rolls_back_on_error(conn):
-    with pytest.raises(ValueError):
-        with conn:
-            conn.execute("INSERT INTO t (name) VALUES (?)", ("doomed",))
-            raise ValueError("boom")
-    assert conn.execute("SELECT COUNT(*) FROM t").fetchone()[0] == 0
-
-
-def test_mid_transaction_lastrowid(conn):
-    # The insert_digest pattern: read lastrowid mid-transaction, use it downstream.
+def test_mid_block_lastrowid_then_batch(conn):
+    # The insert_digest pattern: autocommit an insert, read lastrowid, then batch
+    # the dependent rows via executemany.
     with conn:
         cur = conn.execute("INSERT INTO t (name) VALUES (?)", ("parent",))
         pid = cur.lastrowid
@@ -126,7 +105,23 @@ def test_mid_transaction_lastrowid(conn):
     assert names == ["parent", "child-1"]
 
 
-def test_fetchall_then_iterate(conn):
+def test_executemany_via_batch(conn):
     conn.executemany("INSERT INTO t (name) VALUES (?)", [("a",), ("b",)])
     rows = conn.execute("SELECT name FROM t ORDER BY id").fetchall()
     assert [r["name"] for r in rows] == ["a", "b"]
+
+
+def test_libsql_error_maps_to_sqlite3(monkeypatch):
+    import libsql_client
+
+    class _Boom:
+        def execute(self, *a, **k):
+            raise libsql_client.LibsqlError("boom", "GENERIC")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(libsql_client, "create_client_sync", lambda **kw: _Boom())
+    c = LibsqlConnection("libsql://x", "t")
+    with pytest.raises(sqlite3.Error):
+        c.execute("SELECT 1")
