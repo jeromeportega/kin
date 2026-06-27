@@ -24,12 +24,21 @@ import { guardDashboard } from "@/middleware"
 // ─── Google provider scope ───────────────────────────────────────────────────
 
 describe("Google auth scope", () => {
-  it("scope is exactly openid email profile", () => {
-    expect(GOOGLE_SCOPE).toBe("openid email profile")
+  it("GOOGLE_SCOPE equals exactly the required value", () => {
+    expect(GOOGLE_SCOPE).toBe(
+      "openid email profile https://www.googleapis.com/auth/gmail.readonly"
+    )
   })
 
-  it("scope does not contain gmail.readonly", () => {
-    expect(GOOGLE_SCOPE).not.toContain("gmail.readonly")
+  it("scope includes gmail.readonly", () => {
+    expect(GOOGLE_SCOPE).toContain("https://www.googleapis.com/auth/gmail.readonly")
+  })
+
+  it("scope does not include gmail.modify, gmail.send, gmail.compose, or full mail access", () => {
+    expect(GOOGLE_SCOPE).not.toContain("gmail.modify")
+    expect(GOOGLE_SCOPE).not.toContain("gmail.send")
+    expect(GOOGLE_SCOPE).not.toContain("gmail.compose")
+    expect(GOOGLE_SCOPE).not.toContain("https://mail.google.com/")
   })
 })
 
