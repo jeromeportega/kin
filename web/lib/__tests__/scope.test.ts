@@ -25,16 +25,16 @@ describe("resolveScope", () => {
     expect(result).toBe("user@example.com")
   })
 
-  it("throws Unauthenticated when auth() returns null", async () => {
+  it("throws 'no active session' when auth() returns null", async () => {
     vi.mocked(auth).mockResolvedValueOnce(null as never)
 
-    await expect(resolveScope()).rejects.toThrow("Unauthenticated")
+    await expect(resolveScope()).rejects.toThrow("no active session")
   })
 
-  it("throws Unauthenticated when session has no email", async () => {
+  it("throws 'session has no email' when session exists but lacks email", async () => {
     vi.mocked(auth).mockResolvedValueOnce({ user: {} } as never)
 
-    await expect(resolveScope()).rejects.toThrow("Unauthenticated")
+    await expect(resolveScope()).rejects.toThrow("session has no email")
   })
 
   it("uses session email not KIN_DEMO_USER (ADR-010)", async () => {

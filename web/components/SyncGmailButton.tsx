@@ -19,12 +19,7 @@ export function SyncGmailButton() {
         setState("idle")
         router.refresh()
       } else if (res.status === 409) {
-        const data = await res.json()
-        if (data.reauth) {
-          setState("reauth")
-        } else {
-          setState("error")
-        }
+        setState("reauth")
       } else {
         setState("error")
       }

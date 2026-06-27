@@ -9,13 +9,19 @@ const mockAuth = vi.hoisted(() => vi.fn())
 vi.mock("@/auth", () => ({ auth: mockAuth }))
 
 const mockSpawnIngestion = vi.hoisted(() => vi.fn<[string], Promise<number>>())
-vi.mock("@/lib/spawnIngestion", () => ({ spawnIngestion: mockSpawnIngestion }))
+vi.mock("@/lib/spawnIngestion", () => ({
+  spawnIngestion: mockSpawnIngestion,
+  TIMEOUT_EXIT: 124,
+}))
 
 import { POST } from "@/app/api/sync/route"
 
 beforeEach(() => {
   vi.clearAllMocks()
 })
+
+/** Drain all pending microtasks (more robust than a single Promise.resolve()). */
+const flushMicrotasks = () => new Promise<void>((r) => setImmediate(r))
 
 describe("POST /api/sync", () => {
   // ─── AC1: no session → 401, spawn not called ──────────────────────────────
@@ -27,6 +33,17 @@ describe("POST /api/sync", () => {
 
     expect(res.status).toBe(401)
     expect(mockSpawnIngestion).not.toHaveBeenCalled()
+  })
+
+  it("returns 401 when session exists but has no email", async () => {
+    mockAuth.mockResolvedValueOnce({ user: {} })
+
+    const res = await POST()
+
+    expect(res.status).toBe(401)
+    expect(mockSpawnIngestion).not.toHaveBeenCalled()
+    const body = await res.json()
+    expect(body.error).toContain("session has no email")
   })
 
   // ─── AC2 happy path: EXIT_OK → 200 + revalidatePath ──────────────────────
@@ -62,6 +79,19 @@ describe("POST /api/sync", () => {
 
     expect(res.status).toBe(409)
     expect(await res.json()).toEqual({ reauth: true })
+    expect(mockRevalidatePath).not.toHaveBeenCalled()
+  })
+
+  // ─── timeout: TIMEOUT_EXIT → 504 ─────────────────────────────────────────
+
+  it("returns 504 on TIMEOUT_EXIT (124)", async () => {
+    mockAuth.mockResolvedValueOnce({ user: { email: "user@example.com" } })
+    mockSpawnIngestion.mockResolvedValueOnce(124)
+
+    const res = await POST()
+
+    expect(res.status).toBe(504)
+    expect(await res.json()).toHaveProperty("error")
     expect(mockRevalidatePath).not.toHaveBeenCalled()
   })
 
@@ -135,8 +165,8 @@ describe("POST /api/sync", () => {
 
     // Start first sync; it will be suspended at await spawnIngestion()
     const firstPromise = POST()
-    // Flush one microtask so the first POST advances past inFlight.add()
-    await Promise.resolve()
+    // Drain all pending microtasks so the first POST advances past inFlight.add()
+    await flushMicrotasks()
 
     const secondResponse = await POST()
     expect(secondResponse.status).toBe(429)
