@@ -72,3 +72,40 @@ export function unfamiliarSenders(
     .sort((a, b) => b.count - a.count || b.latest.localeCompare(a.latest))
     .slice(0, limit)
 }
+
+const STOPWORDS = new Set([
+  "your", "you", "the", "and", "for", "with", "from", "this", "that", "are", "has",
+  "have", "will", "our", "new", "now", "get", "can", "was", "were", "not", "but",
+  "all", "any", "out", "more", "about", "into", "just", "here", "there", "what",
+  "when", "reminder", "notification", "update", "updates", "summary", "email",
+  "please", "account", "order", "confirmed", "ready", "available", "weekly",
+  "daily", "today", "tomorrow", "info", "notice",
+])
+
+// Candidate subject keywords drawn from classified mail: notable terms the user
+// might want to always classify on, ranked by how many emails mention them and
+// excluding stopwords and terms already in the config. Surfaced in the tuning UI
+// so the user can answer "do you want more notices about this subject?".
+export function suggestKeywords(
+  classifications: Classification[],
+  config: KinConfig,
+  limit = 8
+): string[] {
+  const have = new Set(config.subject_keywords.map((k) => k.toLowerCase()))
+  const freq = new Map<string, number>()
+  for (const c of classifications) {
+    const seen = new Set<string>()
+    for (const raw of c.subject.toLowerCase().split(/[^a-z0-9]+/)) {
+      const w = raw.trim()
+      if (w.length < 4 || /^\d+$/.test(w) || STOPWORDS.has(w) || have.has(w) || seen.has(w)) {
+        continue
+      }
+      seen.add(w)
+      freq.set(w, (freq.get(w) ?? 0) + 1)
+    }
+  }
+  return [...freq.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([w]) => w)
+}
