@@ -115,10 +115,6 @@ class TestDigestLatest:
         resp = client.get("/api/digest/latest?user_id=nobody")
         assert resp.status_code == 204
 
-    def test_empty_state_not_500(self, client):
-        resp = client.get("/api/digest/latest?user_id=nobody")
-        assert resp.status_code != 500
-
     def test_happy_path_returns_digest_model(self, client, seeded_db_path):
         _seed_digest(seeded_db_path, "jerome", window_hours=24)
         resp = client.get("/api/digest/latest?user_id=jerome&hours=24")

@@ -3,7 +3,7 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from api.deps import get_ro_conn, resolve_user_id
 from api.models import ClassificationModel
@@ -16,7 +16,7 @@ router = APIRouter()
 def get_classifications(
     conn: Annotated[sqlite3.Connection, Depends(get_ro_conn)],
     user_id: Annotated[str, Depends(resolve_user_id)],
-    hours: int = 24,
+    hours: Annotated[int, Query(ge=0, le=8760)] = 24,
 ) -> list[ClassificationModel]:
     """Return classifications whose email date falls within the last `hours`."""
     window_end = datetime.now(timezone.utc)
@@ -27,4 +27,4 @@ def get_classifications(
         window_start=window_start,
         window_end=window_end,
     )
-    return [ClassificationModel(**row) for row in rows]
+    return [ClassificationModel(**dict(row)) for row in rows]
