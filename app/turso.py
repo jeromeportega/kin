@@ -6,32 +6,35 @@ Local dev and the entire test suite use stdlib ``sqlite3`` unchanged. When
 and ``cli_common.connect_db_ro()`` return a :class:`LibsqlConnection` instead —
 the *same* ``db.py`` code then runs against Turso.
 
-Only the ``sqlite3`` Connection/Cursor surface that ``db.py`` and its callers
-actually use is implemented (surveyed across app/ ingest/ api/):
+**Transactions.** The libsql HTTP transport does not support *interactive*
+transactions (``TRANSACTIONS_NOT_SUPPORTED``), and the WebSocket transport's sync
+client spawns a background thread that hangs at process exit — bad for a
+serverless function that must return cleanly. So this adapter stays on HTTP and
+runs statements eagerly:
 
-- ``execute`` / ``executemany`` / ``executescript``
-- ``commit`` / ``rollback`` / ``close`` / ``cursor``
-- ``row_factory`` (accepted for parity; libsql rows are already name-accessible)
-- ``with conn:`` transactions — backed by a real libsql interactive transaction
-  (``client.transaction()``), so a block can read ``cursor.lastrowid`` mid-flight
-  and use it in later writes (e.g. ``insert_digest``)
-- ``Cursor.lastrowid`` / ``rowcount`` / ``fetchone`` / ``fetchall`` / iteration
+- a single ``execute`` autocommits;
+- ``executemany`` and ``executescript`` run as one atomic ``batch()``.
 
-libsql-client rows support both positional (``row[0]``) and name (``row["x"]``)
-access plus ``keys()``, so they pass through unwrapped.
+``with conn:`` is therefore a no-op wrapper. That is fully atomic for every
+single-statement unit in kin (start_run, upsert_email, insert_classification,
+finish_run, …). The one multi-statement unit, ``insert_digest``, commits the
+digest row then atomically batches its items; a failure in between would leave an
+itemless digest — harmless, and regenerated on the next digest run.
 
-The driver is the pure-Python ``libsql-client`` (HTTP). The native
-``libsql-experimental`` was rejected: it has no ``row_factory`` or connection
-context-manager protocol and returns bare tuples, and it fails to build on
-Python 3.14.
+Driver: pure-Python ``libsql-client`` (HTTP). ``libsql-experimental`` was
+rejected (no ``row_factory``/context-manager, bare-tuple rows, fails to build on
+Python 3.14). Its rows already support positional ``row[0]`` and name
+``row["x"]`` access, so they pass through unwrapped. libsql errors are
+translated to ``sqlite3`` errors so existing ``except sqlite3.*`` clauses fire.
 """
 from __future__ import annotations
 
+import sqlite3
 from typing import Any, Iterable, Sequence
 
 
 def _http_url(url: str) -> str:
-    """Turso hands out ``libsql://`` URLs; the sync HTTP client wants ``https://``."""
+    """Turso hands out ``libsql://`` URLs; the HTTP client wants ``https://``."""
     if url.startswith("libsql://"):
         return "https://" + url[len("libsql://") :]
     return url
@@ -57,14 +60,7 @@ class _Cursor:
         self.rowcount: int = -1
 
     def execute(self, sql: str, params: Sequence[Any] = ()) -> "_Cursor":
-        self._load(self._conn._exec(sql, params))
-        return self
-
-    def executemany(self, sql: str, seq_of_params: Iterable[Sequence[Any]]) -> "_Cursor":
-        result = None
-        for params in seq_of_params:
-            result = self._conn._exec(sql, params)
-        self._load(result)
+        self._load(self._conn._execute_one(sql, params))
         return self
 
     def _load(self, result: Any) -> None:
@@ -96,66 +92,62 @@ class LibsqlConnection:
     def __init__(self, url: str, auth_token: str) -> None:
         import libsql_client  # lazy: only needed on the Turso path
 
+        self._libsql = libsql_client
         self._client = libsql_client.create_client_sync(
             url=_http_url(url), auth_token=auth_token
         )
-        self._tx: Any | None = None  # active interactive transaction within `with conn:`
         self.row_factory: Any = None  # accepted for parity; rows are already name-accessible
 
-    # --- statement execution -------------------------------------------------
-    def _exec(self, sql: str, params: Sequence[Any] = ()) -> Any:
-        target = self._tx if self._tx is not None else self._client
-        if params:
-            return target.execute(sql, list(params))
-        return target.execute(sql)
+    def _translate(self, exc: Exception) -> sqlite3.Error:
+        # Map libsql errors onto sqlite3 so existing `except sqlite3.*` clauses
+        # in db.py / triage.py keep working on the Turso path.
+        return sqlite3.OperationalError(str(exc))
+
+    def _execute_one(self, sql: str, params: Sequence[Any] = ()) -> Any:
+        try:
+            if params:
+                return self._client.execute(sql, list(params))
+            return self._client.execute(sql)
+        except self._libsql.LibsqlError as exc:
+            raise self._translate(exc) from exc
+
+    def _batch(self, statements: list[Any]) -> None:
+        try:
+            self._client.batch(statements)
+        except self._libsql.LibsqlError as exc:
+            raise self._translate(exc) from exc
 
     def execute(self, sql: str, params: Sequence[Any] = ()) -> _Cursor:
         return _Cursor(self).execute(sql, params)
 
     def executemany(self, sql: str, seq_of_params: Iterable[Sequence[Any]]) -> _Cursor:
-        return _Cursor(self).executemany(sql, seq_of_params)
+        stmts = [(sql, list(p)) for p in seq_of_params]
+        if stmts:
+            self._batch(stmts)
+        return _Cursor(self)
 
     def executescript(self, script: str) -> None:
-        # Each statement is run on its own; DDL here is idempotent. (A future
-        # optimization could batch these into one round-trip via client.batch.)
-        for stmt in _split_script(script):
-            self._exec(stmt)
+        stmts = _split_script(script)
+        if stmts:
+            self._batch(stmts)
 
     def cursor(self) -> _Cursor:
         return _Cursor(self)
 
-    # --- transactions --------------------------------------------------------
-    def commit(self) -> None:
-        if self._tx is not None:
-            self._tx.commit()
-            self._tx = None
-
-    def rollback(self) -> None:
-        if self._tx is not None:
-            self._tx.rollback()
-            self._tx = None
-
+    # `with conn:` is a no-op — statements already autocommit (see module docstring).
     def __enter__(self) -> "LibsqlConnection":
-        # Mirror sqlite3's `with conn:` — commit on success, roll back on error.
-        self._tx = self._client.transaction()
         return self
 
     def __exit__(self, exc_type, exc, tb) -> bool:
-        if self._tx is not None:
-            if exc_type is None:
-                self._tx.commit()
-            else:
-                self._tx.rollback()
-            self._tx = None
         return False
 
+    def commit(self) -> None:  # autocommit — nothing to flush
+        pass
+
+    def rollback(self) -> None:  # cannot undo autocommitted statements
+        pass
+
     def close(self) -> None:
-        if self._tx is not None:
-            try:
-                self._tx.rollback()
-            except Exception:
-                pass
-            self._tx = None
         self._client.close()
 
 
