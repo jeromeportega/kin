@@ -8,24 +8,21 @@ vi.mock("@/auth", () => ({
 import { auth } from "@/auth"
 import { resolveScope } from "@/lib/scope"
 
-const DEMO_USER = "jerome"
-
 beforeEach(() => {
-  process.env.KIN_DEMO_USER = DEMO_USER
+  vi.resetAllMocks()
 })
 
 afterEach(() => {
   vi.resetAllMocks()
-  delete process.env.KIN_DEMO_USER
 })
 
 describe("resolveScope", () => {
-  it("returns KIN_DEMO_USER when session exists", async () => {
+  it("returns session.user.email when session exists", async () => {
     vi.mocked(auth).mockResolvedValueOnce({ user: { email: "user@example.com" } } as never)
 
     const result = await resolveScope()
 
-    expect(result).toBe(DEMO_USER)
+    expect(result).toBe("user@example.com")
   })
 
   it("throws Unauthenticated when auth() returns null", async () => {
@@ -34,10 +31,20 @@ describe("resolveScope", () => {
     await expect(resolveScope()).rejects.toThrow("Unauthenticated")
   })
 
-  it("throws when KIN_DEMO_USER is unset", async () => {
-    delete process.env.KIN_DEMO_USER
-    vi.mocked(auth).mockResolvedValueOnce({ user: { email: "user@example.com" } } as never)
+  it("throws Unauthenticated when session has no email", async () => {
+    vi.mocked(auth).mockResolvedValueOnce({ user: {} } as never)
 
-    await expect(resolveScope()).rejects.toThrow("KIN_DEMO_USER is not configured")
+    await expect(resolveScope()).rejects.toThrow("Unauthenticated")
+  })
+
+  it("uses session email not KIN_DEMO_USER (ADR-010)", async () => {
+    process.env.KIN_DEMO_USER = "demo-user"
+    vi.mocked(auth).mockResolvedValueOnce({ user: { email: "real@example.com" } } as never)
+
+    const result = await resolveScope()
+
+    expect(result).toBe("real@example.com")
+    expect(result).not.toBe("demo-user")
+    delete process.env.KIN_DEMO_USER
   })
 })
