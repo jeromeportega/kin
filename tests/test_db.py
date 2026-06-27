@@ -6,13 +6,17 @@ import pytest
 
 from app.db import (
     SCHEMA_VERSION,
+    add_filter_entries,
     find_classification,
     finish_run,
+    get_filter_entries,
     init_schema,
     insert_classification,
     insert_classification_error,
+    read_refresh_token,
     start_run,
     upsert_email,
+    write_refresh_token,
 )
 from app.email_source import FetchedEmail
 from app.schemas.email import Category, EmailClassification, Priority
@@ -143,14 +147,69 @@ def test_v1_to_v2_migration_preserves_existing_data():
     conn.close()
 
 
-def test_init_schema_idempotent_on_v2(mem_db):
-    # mem_db is already at v2 (fixture inits at current SCHEMA_VERSION)
+def test_init_schema_idempotent_on_current(mem_db):
+    # mem_db is already at the current SCHEMA_VERSION (fixture inits there).
     init_schema(mem_db)
     init_schema(mem_db)
     row = mem_db.execute(
         "SELECT value FROM _meta WHERE key = 'schema_version'"
     ).fetchone()
-    assert row["value"] == "2"
+    assert row["value"] == SCHEMA_VERSION
+
+
+# --- filter config + token store (v3) ----------------------------------------
+
+def test_filter_entries_round_trip(mem_db):
+    added = add_filter_entries(
+        mem_db, user_id="jerome", kind="sender_allowlist", values=["a@x.com", "b@y.com"]
+    )
+    assert added == 2
+    assert get_filter_entries(mem_db, "jerome")["sender_allowlist"] == ["a@x.com", "b@y.com"]
+
+
+def test_add_filter_entries_is_idempotent(mem_db):
+    add_filter_entries(mem_db, user_id="jerome", kind="subject_keywords", values=["bill"])
+    again = add_filter_entries(
+        mem_db, user_id="jerome", kind="subject_keywords", values=["bill", "invoice"]
+    )
+    assert again == 1  # only "invoice" is new
+    assert get_filter_entries(mem_db, "jerome")["subject_keywords"] == ["bill", "invoice"]
+
+
+def test_filter_entries_scoped_by_user(mem_db):
+    add_filter_entries(mem_db, user_id="jerome", kind="sender_allowlist", values=["a@x.com"])
+    add_filter_entries(mem_db, user_id="other", kind="sender_allowlist", values=["z@x.com"])
+    assert get_filter_entries(mem_db, "jerome")["sender_allowlist"] == ["a@x.com"]
+
+
+def test_token_round_trip_and_upsert(mem_db):
+    assert read_refresh_token(mem_db, "me@gmail.com") is None
+    write_refresh_token(
+        mem_db, email="me@gmail.com", refresh_token="tok1", scope="gmail.readonly", now=NOW
+    )
+    assert read_refresh_token(mem_db, "me@gmail.com") == "tok1"
+    write_refresh_token(
+        mem_db, email="me@gmail.com", refresh_token="tok2", scope="gmail.readonly", now=LATER
+    )
+    assert read_refresh_token(mem_db, "me@gmail.com") == "tok2"  # upserted
+
+
+def test_v2_to_v3_migration_adds_tables():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    # Build a v2-shaped DB: full schema, then stamp the version back and drop v3 tables.
+    init_schema(conn)
+    conn.execute("UPDATE _meta SET value = '2' WHERE key = 'schema_version'")
+    conn.execute("DROP TABLE filter_entries")
+    conn.execute("DROP TABLE gmail_tokens")
+    conn.commit()
+    # Re-init migrates 2 -> 3 and recreates the v3 tables.
+    init_schema(conn)
+    tables = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"filter_entries", "gmail_tokens"} <= tables
+    version = conn.execute("SELECT value FROM _meta WHERE key='schema_version'").fetchone()["value"]
+    assert version == "3"
+    conn.close()
 
 
 # --- upsert_email ------------------------------------------------------------

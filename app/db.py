@@ -24,7 +24,7 @@ from typing import Callable
 from app.email_source import FetchedEmail
 from app.schemas.email import EmailClassification
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 
 @dataclass(frozen=True)
@@ -76,11 +76,35 @@ CREATE INDEX IF NOT EXISTS idx_digest_items_class
 """
 
 
+# v3 moves the filter config (was kin.toml) and the Gmail token store (was
+# data/gmail_tokens.json) into the DB, so they survive on Vercel's ephemeral
+# filesystem and are reachable from both the Python pipeline and the web layer.
+_V3_NEW_TABLES_SQL = """
+CREATE TABLE IF NOT EXISTS filter_entries (
+  user_id TEXT NOT NULL DEFAULT 'jerome',
+  kind TEXT NOT NULL CHECK (kind IN (
+    'sender_allowlist', 'sender_blocklist', 'subject_keywords', 'body_keywords'
+  )),
+  value TEXT NOT NULL,
+  PRIMARY KEY (user_id, kind, value)
+);
+
+CREATE TABLE IF NOT EXISTS gmail_tokens (
+  email TEXT PRIMARY KEY,
+  refresh_token TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+"""
+
+
 # Migration paths keyed by (from_version, to_version). Add entries as you
-# bump SCHEMA_VERSION. v1→v2 is purely additive; the new-tables SQL is
+# bump SCHEMA_VERSION. Each is purely additive; the new-tables SQL is
 # safe to re-run.
 _MIGRATIONS: dict[tuple[str, str], MigrationStep] = {
     ("1", "2"): MigrationStep(pre_sql=_V2_NEW_TABLES_SQL),
+    ("2", "3"): MigrationStep(pre_sql=_V3_NEW_TABLES_SQL),
+    ("1", "3"): MigrationStep(pre_sql=_V2_NEW_TABLES_SQL + _V3_NEW_TABLES_SQL),
 }
 
 
@@ -149,7 +173,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_class_unique_success
   WHERE error IS NULL;
 CREATE INDEX IF NOT EXISTS idx_class_email ON classifications (email_id);
 CREATE INDEX IF NOT EXISTS idx_class_classified_at ON classifications (classified_at DESC);
-""" + _V2_NEW_TABLES_SQL
+""" + _V2_NEW_TABLES_SQL + _V3_NEW_TABLES_SQL
 
 
 def connect(path: Path | str) -> sqlite3.Connection:
@@ -702,3 +726,61 @@ def insert_digest(
             [(digest_id, cid, idx) for idx, cid in enumerate(classification_ids)],
         )
     return digest_id
+
+
+# --- filter config (v3) ---------------------------------------------------
+
+
+def get_filter_entries(conn: sqlite3.Connection, user_id: str) -> dict[str, list[str]]:
+    """Return this user's filter entries grouped by kind (sender_allowlist, …)."""
+    rows = conn.execute(
+        "SELECT kind, value FROM filter_entries WHERE user_id = ? ORDER BY kind, value",
+        (user_id,),
+    ).fetchall()
+    grouped: dict[str, list[str]] = {}
+    for row in rows:
+        grouped.setdefault(row["kind"], []).append(row["value"])
+    return grouped
+
+
+def add_filter_entries(
+    conn: sqlite3.Connection, *, user_id: str, kind: str, values: list[str]
+) -> int:
+    """Idempotently add filter entries of one kind. Returns the count newly added."""
+    added = 0
+    for value in values:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO filter_entries (user_id, kind, value) VALUES (?, ?, ?)",
+            (user_id, kind, value),
+        )
+        if cur.rowcount and cur.rowcount > 0:
+            added += 1
+    return added
+
+
+# --- Gmail token store (v3) -----------------------------------------------
+
+
+def read_refresh_token(conn: sqlite3.Connection, email: str) -> str | None:
+    """Return the stored Gmail refresh token for *email*, or None."""
+    row = conn.execute(
+        "SELECT refresh_token FROM gmail_tokens WHERE email = ?", (email,)
+    ).fetchone()
+    return row["refresh_token"] if row else None
+
+
+def write_refresh_token(
+    conn: sqlite3.Connection, *, email: str, refresh_token: str, scope: str, now: datetime
+) -> None:
+    """Upsert the Gmail refresh token for *email*."""
+    conn.execute(
+        """
+        INSERT INTO gmail_tokens (email, refresh_token, scope, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT (email) DO UPDATE SET
+          refresh_token = excluded.refresh_token,
+          scope = excluded.scope,
+          updated_at = excluded.updated_at
+        """,
+        (email, refresh_token, scope, _iso(now)),
+    )
