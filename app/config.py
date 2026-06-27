@@ -38,3 +38,21 @@ def load_config(path: Path | str = "kin.toml") -> FilterConfig:
         )
     data = tomllib.loads(path.read_text())
     return FilterConfig(**data.get("filters", {}))
+
+
+def load_config_from_db(conn, user_id: str) -> FilterConfig:
+    """Load the filter config from the DB (the `filter_entries` table).
+
+    This is the production path (config lives in the DB, reachable from both the
+    pipeline and the web layer). ``load_config`` (TOML file) remains for the
+    one-time seed and local inspection.
+    """
+    from app import db  # local import avoids a config↔db import cycle
+
+    grouped = db.get_filter_entries(conn, user_id)
+    return FilterConfig(
+        sender_allowlist=grouped.get("sender_allowlist", []),
+        sender_blocklist=grouped.get("sender_blocklist", []),
+        subject_keywords=grouped.get("subject_keywords", []),
+        body_keywords=grouped.get("body_keywords", []),
+    )
