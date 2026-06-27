@@ -1,12 +1,16 @@
 """GET /api/digest/latest — latest persisted digest for a user."""
+import logging
 import sqlite3
 from typing import Annotated, Union
 
 from fastapi import APIRouter, Depends, Query, Response
+from pydantic import ValidationError
 
 from api.deps import get_ro_conn, resolve_user_id
 from api.models import DigestModel
 from app.db import fetch_latest_digest_json
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -25,4 +29,8 @@ def get_latest_digest(
     json_str = fetch_latest_digest_json(conn, user_id=user_id, window_hours=hours)
     if json_str is None:
         return Response(status_code=204)
-    return DigestModel.model_validate_json(json_str)
+    try:
+        return DigestModel.model_validate_json(json_str)
+    except ValidationError:
+        logger.exception("Stored digest JSON failed Pydantic validation for user=%s", user_id)
+        return Response(status_code=204)

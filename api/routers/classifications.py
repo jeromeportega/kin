@@ -27,4 +27,4 @@ def get_classifications(
         window_start=window_start,
         window_end=window_end,
     )
-    return [ClassificationModel(**dict(row)) for row in rows]
+    return [ClassificationModel.model_validate(dict(row)) for row in rows]

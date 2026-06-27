@@ -584,7 +584,8 @@ def fetch_runs(
 ) -> list[dict]:
     """Most-recent triage runs for a user, newest first. SELECT-only.
 
-    Uses idx_runs_user_started. Excludes the `args` blob (ADR-006).
+    Uses idx_runs_user_started. Excludes `args` — it is an opaque CLI blob
+    that is large, schema-unstable, and never needed by read clients.
     """
     return [
         {
@@ -610,7 +611,7 @@ def fetch_runs(
                    reused, errors, truncated
             FROM runs
             WHERE user_id = ?
-            ORDER BY started_at DESC
+            ORDER BY DATETIME(started_at) DESC
             LIMIT ?
             """,
             (user_id, limit),

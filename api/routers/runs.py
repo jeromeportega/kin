@@ -19,4 +19,5 @@ def get_runs(
 ) -> list[RunModel]:
     """Return the most recent triage runs for the user, newest first."""
     rows = fetch_runs(conn, user_id=user_id, limit=limit)
-    return [RunModel(**dict(row)) for row in rows]
+    # fetch_runs already returns plain dicts, so no dict() conversion needed
+    return [RunModel.model_validate(row) for row in rows]

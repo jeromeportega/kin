@@ -141,7 +141,8 @@ class TestDigestLatest:
     def test_hours_param_flows_into_window_hours(self, client, seeded_db_path):
         """hours query param is passed as window_hours to fetch_latest_digest_json."""
         _seed_digest(seeded_db_path, "jerome", window_hours=48)
-        # hours=24 must NOT find the window_hours=48 digest
+        # fetch_latest_digest_json filters by exact window_hours column equality (WHERE window_hours = ?),
+        # so hours=24 must NOT match a row seeded with window_hours=48.
         resp = client.get("/api/digest/latest?user_id=jerome&hours=24")
         assert resp.status_code == 204
         # hours=48 MUST find it
