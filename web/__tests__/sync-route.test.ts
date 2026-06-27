@@ -8,7 +8,7 @@ vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }))
 const mockAuth = vi.hoisted(() => vi.fn())
 vi.mock("@/auth", () => ({ auth: mockAuth }))
 
-const mockSpawnIngestion = vi.hoisted(() => vi.fn<[string], Promise<number>>())
+const mockSpawnIngestion = vi.hoisted(() => vi.fn<(email: string) => Promise<number>>())
 vi.mock("@/lib/spawnIngestion", () => ({
   spawnIngestion: mockSpawnIngestion,
   TIMEOUT_EXIT: 124,

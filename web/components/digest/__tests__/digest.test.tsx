@@ -278,13 +278,19 @@ vi.mock("@/lib/api", () => ({
   fetchDigest: vi.fn(),
   fetchClassifications: vi.fn(),
 }))
+vi.mock("@/lib/kinConfig", () => ({
+  readKinConfig: vi
+    .fn()
+    .mockResolvedValue({ sender_allowlist: [], sender_blocklist: [], subject_keywords: [] }),
+}))
 
 import DashboardPage from "@/app/dashboard/page"
-import { fetchDigest } from "@/lib/api"
+import { fetchDigest, fetchClassifications } from "@/lib/api"
 
 describe("DashboardPage — empty state (fetchDigest mocked to null)", () => {
   beforeEach(() => {
     vi.mocked(fetchDigest).mockResolvedValue(null)
+    vi.mocked(fetchClassifications).mockResolvedValue([])
   })
 
   afterEach(() => {

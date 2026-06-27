@@ -1,20 +1,35 @@
 # kin
 
-Local-first AI for personal and family workflows. Runs entirely on your machine via [Ollama](https://ollama.com/) — no recurring API costs, no family data leaving the house.
+AI for personal and family workflows. Email classification runs on the
+[Anthropic API](https://docs.claude.com/) (Claude); the rest of the pipeline —
+filtering, persistence, digest, sync — runs locally.
 
 ## Setup
 
 ```bash
 # One-time
-brew install ollama uv
-brew services start ollama
-ollama pull qwen3:14b
+brew install uv
+
+# Anthropic API key (create one at https://console.anthropic.com/)
+cp .env.example .env && chmod 600 .env   # then fill in ANTHROPIC_API_KEY
 
 # Project deps
 uv sync
 ```
 
 ## Phase 1 — Email classifier (built)
+
+Classification uses Claude (`claude-sonnet-4-6` by default — a strong,
+cost-efficient fit for high-volume, rubric-driven triage) via the Anthropic SDK
+with structured output (the response is constrained to `app/schemas/email.py`).
+The stable instruction prompt is sent as a `cache_control` system block so it is
+eligible for [prompt caching](https://docs.claude.com/en/docs/build-with-claude/prompt-caching);
+caching only *engages* once that cached prefix clears the model's minimum (2048
+tokens on Sonnet 4.6, 4096 on Opus), so with the current ~1.3k-token prompt it is
+a no-op until the instructions grow (e.g. per-user few-shot examples). Override
+with `--model` (e.g. `claude-opus-4-8` for max accuracy, `claude-haiku-4-5` for
+lowest cost) — and run `uv run python -m app.eval` to confirm accuracy on a model
+change.
 
 Classify a single email and emit structured JSON:
 
@@ -86,7 +101,7 @@ Useful flags:
 | `--limit N` | 200 | Hard cap on classified messages per run. |
 | `--out PATH` | — | Also write JSONL to this path. |
 | `--dry-run` | off | Skip the LLM; just print filter survivors. |
-| `--model NAME` | `qwen3:14b` | Ollama model tag. |
+| `--model NAME` | `claude-sonnet-4-6` | Anthropic model id. |
 | `--config PATH` | `kin.toml` | Filter config path. |
 
 Each JSONL record carries `model`, `prompt_version`, and a `source` field (`classifier` | `db` | `error` | `filter` for dry-runs) so outputs stay interpretable as those evolve. Per-run stats land on stderr:

@@ -26,7 +26,7 @@ function buildEnv(): NodeJS.ProcessEnv {
     "AUTH_GOOGLE_ID",
     "AUTH_GOOGLE_SECRET",
   ] as const
-  const env: NodeJS.ProcessEnv = {}
+  const env: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV }
   for (const k of keys) {
     if (process.env[k] !== undefined) env[k] = process.env[k]
   }
