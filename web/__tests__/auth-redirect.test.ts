@@ -45,11 +45,11 @@ describe("session config", () => {
 
 describe("guardDashboard", () => {
   it("redirects to /signin when unauthenticated (auth returns null)", () => {
-    const response = guardDashboard(null, "http://localhost:3000")
+    const response = guardDashboard(null)
     expect(response).toBeDefined()
     expect((response as Response).status).toBe(307)
     const location = (response as Response).headers.get("location")
-    expect(location).toBe("http://localhost:3000/signin")
+    expect(location).toContain("/signin")
   })
 
   it("does not redirect when authenticated (auth returns a session)", () => {
@@ -57,7 +57,7 @@ describe("guardDashboard", () => {
       user: { name: "Test User", email: "test@example.com", image: null },
       expires: "2099-12-31T00:00:00.000Z",
     }
-    const response = guardDashboard(session as any, "http://localhost:3000")
+    const response = guardDashboard(session as any)
     expect(response).toBeUndefined()
   })
 })

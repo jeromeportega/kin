@@ -1,5 +1,7 @@
 import { signIn } from "@/auth"
 import { Button } from "@/components/ui/button"
+import { AuthError } from "next-auth"
+import { redirect } from "next/navigation"
 
 export default function SignInPage() {
   return (
@@ -9,7 +11,14 @@ export default function SignInPage() {
         <form
           action={async () => {
             "use server"
-            await signIn("google", { redirectTo: "/dashboard" })
+            try {
+              await signIn("google", { redirectTo: "/dashboard" })
+            } catch (e) {
+              if (e instanceof AuthError) {
+                redirect("/signin?error=OAuthError")
+              }
+              throw e
+            }
           }}
         >
           <Button type="submit">Sign in with Google</Button>
