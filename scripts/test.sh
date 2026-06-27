@@ -23,10 +23,14 @@ echo "== python: app + api =="
 uv run --all-packages pytest -q || { echo "  ✗ python suite FAILED"; fail=1; }
 
 if [ -f web/package.json ]; then
-  echo "== web: vitest =="
   # Bare gate worktree has no node_modules — install if missing.
-  ( cd web && { [ -d node_modules ] || npm ci; } && npm test -- --run ) \
-    || { echo "  ✗ web suite FAILED"; fail=1; }
+  ( cd web && { [ -d node_modules ] || npm ci; } ) || { echo "  ✗ web deps FAILED"; fail=1; }
+  echo "== web: typecheck (tsc) =="
+  # Vitest strips types — a tsc pass catches the type/build errors it can't
+  # (e.g. wrong UI-library props), which would otherwise only break `next build`.
+  ( cd web && npx tsc --noEmit ) || { echo "  ✗ web typecheck FAILED"; fail=1; }
+  echo "== web: vitest =="
+  ( cd web && npm test -- --run ) || { echo "  ✗ web suite FAILED"; fail=1; }
 else
   echo "== web: skipped (web/ not present) =="
 fi
