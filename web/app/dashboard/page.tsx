@@ -2,7 +2,7 @@ import { redirect } from "next/navigation"
 import { resolveScope } from "@/lib/scope"
 import { fetchDigest, fetchClassifications } from "@/lib/api"
 import { readKinConfig } from "@/lib/kinConfig"
-import { unfamiliarSenders } from "@/lib/tuning"
+import { unfamiliarSenders, suggestKeywords } from "@/lib/tuning"
 import { DashboardTabs } from "@/components/DashboardTabs"
 import { TuningPrompt } from "@/components/TuningPrompt"
 import { SyncGmailButton } from "@/components/SyncGmailButton"
@@ -27,6 +27,7 @@ export default async function DashboardPage() {
   // When the user has okayed/muted everything arriving, this is empty and the
   // prompt hides itself.
   const unfamiliar = unfamiliarSenders(classifications, config)
+  const suggestedKeywords = suggestKeywords(classifications, config)
 
   return (
     <main className="container mx-auto max-w-4xl py-8 px-4">
@@ -34,7 +35,7 @@ export default async function DashboardPage() {
         <SyncGmailButton />
         <SignOutButton />
       </div>
-      <TuningPrompt senders={unfamiliar} />
+      <TuningPrompt senders={unfamiliar} suggestedKeywords={suggestedKeywords} />
       <DashboardTabs digest={digest} classifications={classifications} />
     </main>
   )

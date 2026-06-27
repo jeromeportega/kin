@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { unfamiliarSenders, extractEmail } from "@/lib/tuning"
+import { unfamiliarSenders, extractEmail, suggestKeywords } from "@/lib/tuning"
 import type { Classification } from "@/lib/types"
 import type { KinConfig } from "@/lib/kinConfig"
 
@@ -76,5 +76,32 @@ describe("unfamiliarSenders", () => {
   it("respects the limit", () => {
     const many = Array.from({ length: 15 }, (_, i) => c({ from_addr: `s${i}@x.com` }))
     expect(unfamiliarSenders(many, empty, 10)).toHaveLength(10)
+  })
+})
+
+describe("suggestKeywords", () => {
+  it("ranks notable subject terms by frequency, dropping stopwords", () => {
+    const r = suggestKeywords(
+      [
+        c({ subject: "Pediatrician appointment confirmed" }),
+        c({ subject: "Pediatrician visit summary" }),
+        c({ subject: "Your weekly newsletter" }),
+      ],
+      empty
+    )
+    expect(r[0]).toBe("pediatrician") // appears in 2 emails
+    expect(r).not.toContain("your") // stopword
+    expect(r).not.toContain("summary") // stopword
+  })
+
+  it("excludes terms already in the config and respects the limit", () => {
+    const cfg = { ...empty, subject_keywords: ["invoice"] }
+    const r = suggestKeywords(
+      [c({ subject: "invoice payment tuition daycare" })],
+      cfg,
+      2
+    )
+    expect(r).not.toContain("invoice")
+    expect(r.length).toBeLessThanOrEqual(2)
   })
 })
