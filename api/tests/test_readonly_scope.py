@@ -358,3 +358,67 @@ class TestReadOnlyEnforcementDIWiring:
         assert matched == data_paths, (
             f"Expected routes not registered: {data_paths - matched}"
         )
+
+    def test_all_api_routes_are_get_only_exhaustive_scan(self, client):
+        """Exhaustive scan: every /api/ route in the app must be GET-only.
+
+        Unlike test_no_data_route_accepts_write_methods (which validates a
+        hardcoded allow-list), this test enumerates EVERY route registered in
+        the FastAPI app and asserts that none with an /api/ prefix accepts
+        POST, PUT, PATCH, or DELETE. This catches rogue write routes that
+        slip in outside the known data_paths set.
+        """
+        from api.main import app as fastapi_app
+
+        write_methods = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+        violations = []
+        for route in fastapi_app.routes:
+            if not hasattr(route, "path") or not hasattr(route, "methods"):
+                continue
+            if not route.path.startswith("/api/"):
+                continue
+            exposed = frozenset(m.upper() for m in (route.methods or set()))
+            overlap = exposed & write_methods
+            if overlap:
+                violations.append(f"{route.path}: {overlap!r}")
+
+        assert not violations, (
+            "The following /api/ routes expose write methods — "
+            "api/ must remain strictly read-only (mode=ro):\n"
+            + "\n".join(violations)
+        )
+
+    def test_connect_db_ro_opens_with_mode_ro_uri(self, seeded_db_path):
+        """connect_db_ro must open via the SQLite URI mode=ro flag.
+
+        SQLite's mode=ro prevents writes at the VFS layer, before any
+        application code runs. This test verifies the flag is present by
+        confirming that a second connection opened WITHOUT mode=ro CAN write,
+        while one opened WITH mode=ro (via connect_db_ro) cannot. The asymmetry
+        proves the restriction comes from the URI flag, not from application
+        logic.
+        """
+        import app.db as db
+
+        # Writable connection can write — baseline proof the DB itself is fine.
+        rw_conn = db.connect(str(seeded_db_path))
+        try:
+            rw_conn.execute(
+                "INSERT INTO _meta (key, value) VALUES ('rw_probe', 'ok')"
+            )
+            rw_conn.commit()
+            # Clean up the probe row.
+            rw_conn.execute("DELETE FROM _meta WHERE key = 'rw_probe'")
+            rw_conn.commit()
+        finally:
+            rw_conn.close()
+
+        # Read-only connection via connect_db_ro must reject the same write.
+        ro_conn = connect_db_ro(seeded_db_path, expected_schema_version=db.SCHEMA_VERSION)
+        try:
+            with pytest.raises(sqlite3.OperationalError, match="readonly"):
+                ro_conn.execute(
+                    "INSERT INTO _meta (key, value) VALUES ('ro_probe', 'fail')"
+                )
+        finally:
+            ro_conn.close()
