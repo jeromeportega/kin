@@ -1,7 +1,19 @@
-export default function DashboardPage() {
+import { redirect } from "next/navigation"
+import { resolveScope } from "@/lib/scope"
+import { fetchDigest } from "@/lib/api"
+import { DigestView } from "@/components/digest/DigestView"
+import { EmptyState } from "@/components/digest/EmptyState"
+
+export default async function DashboardPage() {
+  const userId = await resolveScope().catch(() => {
+    redirect("/signin")
+  })
+
+  const digest = await fetchDigest(userId)
+
   return (
-    <main className="flex min-h-screen items-center justify-center">
-      <h1 className="text-2xl font-semibold">Dashboard</h1>
+    <main className="container mx-auto max-w-4xl py-8 px-4">
+      {digest ? <DigestView digest={digest} /> : <EmptyState />}
     </main>
-  );
+  )
 }
