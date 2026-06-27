@@ -18,7 +18,7 @@ export function DigestView({ digest }: { digest: Digest }) {
   return (
     <div className="space-y-8">
       <SummaryStats digest={digest} />
-      <Accordion multiple defaultValue={defaultOpen} className="space-y-2">
+      <Accordion type="multiple" defaultValue={defaultOpen} className="space-y-2">
         <PrioritySection priority="high" items={high} />
         <PrioritySection priority="medium" items={medium} />
         <PrioritySection priority="low" items={low} />

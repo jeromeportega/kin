@@ -5,12 +5,9 @@ import { DigestView } from "@/components/digest/DigestView"
 import { EmptyState } from "@/components/digest/EmptyState"
 
 export default async function DashboardPage() {
-  let userId: string
-  try {
-    userId = await resolveScope()
-  } catch {
+  const userId = await resolveScope().catch(() => {
     redirect("/signin")
-  }
+  })
 
   const digest = await fetchDigest(userId)
 

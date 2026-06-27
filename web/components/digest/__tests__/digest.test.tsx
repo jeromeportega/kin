@@ -266,6 +266,7 @@ describe("EmptyState", () => {
 
 // ─── DashboardPage — empty state with fetchDigest mocked ─────────────────────
 
+vi.mock("next/navigation", () => ({ redirect: vi.fn() }))
 vi.mock("server-only", () => ({}))
 vi.mock("@/lib/scope", () => ({
   resolveScope: vi.fn().mockResolvedValue("jerome"),

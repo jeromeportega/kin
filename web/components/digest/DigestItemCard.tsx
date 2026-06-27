@@ -31,15 +31,15 @@ export function DigestItemCard({ item }: { item: DigestItem }) {
         <p className="text-sm">{item.summary}</p>
         {item.action_items.length > 0 && (
           <ul className="list-disc pl-4 text-sm">
-            {item.action_items.map((action) => (
-              <li key={action}>{action}</li>
+            {item.action_items.map((action, i) => (
+              <li key={i}>{action}</li>
             ))}
           </ul>
         )}
         {item.dates.length > 0 && (
           <ul className="list-none text-xs text-muted-foreground">
-            {item.dates.map((date) => (
-              <li key={date}>{date}</li>
+            {item.dates.map((date, i) => (
+              <li key={i}>{date}</li>
             ))}
           </ul>
         )}
