@@ -1,11 +1,19 @@
 import { describe, it, expect, vi } from "vitest"
 
-// Mocks are hoisted — prevent next-auth and next/server from loading transitively
-vi.mock("@/auth", () => ({
-  auth: vi.fn((callback: any) => (req: any) => callback(req)),
-  handlers: { GET: vi.fn(), POST: vi.fn() },
-  signIn: vi.fn(),
-  signOut: vi.fn(),
+// Mocks are hoisted — prevent next-auth and next/server from loading transitively.
+// middleware.ts builds its OWN edge-safe NextAuth instance (it must not import
+// "@/auth", which pulls in the Node-only token store), so we mock next-auth here.
+vi.mock("next-auth", () => ({
+  default: vi.fn(() => ({
+    auth: vi.fn((callback: any) => (req: any) => callback(req)),
+    handlers: { GET: vi.fn(), POST: vi.fn() },
+    signIn: vi.fn(),
+    signOut: vi.fn(),
+  })),
+}))
+
+vi.mock("next-auth/providers/google", () => ({
+  default: vi.fn(() => ({ id: "google" })),
 }))
 
 vi.mock("next/server", () => ({
