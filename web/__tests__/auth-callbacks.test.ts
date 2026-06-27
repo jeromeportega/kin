@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from "vitest"
+import { describe, it, expect, vi, beforeAll, beforeEach, afterAll, afterEach } from "vitest"
 
 // vi.hoisted ensures these are created before mock factories execute
 const mockWriteRefreshToken = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
@@ -37,6 +37,12 @@ describe("auth.ts callbacks", () => {
     delete process.env.AUTH_SECRET
     delete process.env.GOOGLE_CLIENT_ID
     delete process.env.GOOGLE_CLIENT_SECRET
+  })
+
+  // Reset module registry before each test so stale caches from other test files
+  // running in the same worker don't interfere. The captured callbacks object (hoisted)
+  // is unaffected — it persists across module resets.
+  beforeEach(() => {
     vi.resetModules()
   })
 

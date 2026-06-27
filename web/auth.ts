@@ -30,7 +30,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         try {
           await writeRefreshToken(token.email, account.refresh_token)
         } catch (err) {
-          console.error("tokenStore write failed", err)
+          console.error("tokenStore write failed:", (err as Error).message)
         }
       }
       return token

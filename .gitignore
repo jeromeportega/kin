@@ -11,6 +11,7 @@ data/*.sqlite-wal
 data/*.sqlite-shm
 data/inbox/
 data/gmail_tokens.json
+**/*gmail_tokens*.json
 .idea/
 .vscode/
 triage.jsonl
