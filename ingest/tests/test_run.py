@@ -17,7 +17,7 @@ import pytest
 from app import db
 from app.email_source import FetchedEmail
 from app.schemas.email import Category, EmailClassification, Priority
-from ingest.run import EXIT_CONFIG, EXIT_DB, EXIT_OK, EXIT_REAUTH, IngestionResult, run_ingestion
+from ingest.run import EXIT_CONFIG, EXIT_DB, EXIT_OK, EXIT_REAUTH, EXIT_RENDER, IngestionResult, run_ingestion
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +52,7 @@ def _email(
     from_addr: str = "allowed@example.com",
     subject: str = "Test Subject",
     hours_ago: float = 1.0,
+    date: datetime | None = None,
 ) -> FetchedEmail:
     return FetchedEmail(
         uid=uid,
@@ -60,7 +61,7 @@ def _email(
         to_addrs=("me@x.com",),
         cc_addrs=(),
         subject=subject,
-        date=datetime.now(timezone.utc) - timedelta(hours=hours_ago),
+        date=date if date is not None else datetime.now(timezone.utc) - timedelta(hours=hours_ago),
         text_body="Test email body text",
         truncated=False,
     )
@@ -134,7 +135,7 @@ def test_happy_path_emails_persisted_with_correct_user_id(
         )
 
     assert result.fetched == 2
-    assert result.filtered == 2
+    assert result.passed_filter == 2
     assert result.classified == 2
     assert result.errors == 0
 
@@ -223,10 +224,10 @@ def test_dedup_second_run_does_not_grow_rows(config_path, db_path, token_store_p
 def test_dedup_last_seen_at_is_bumped_on_second_run(
     config_path, db_path, token_store_path
 ):
-    e1 = _email(message_id="<msg1@example.com>", uid="uid1")
-
     t0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
     t1 = t0 + timedelta(seconds=1)
+    # Date must be inside the patched digest window ([t0-24h, t0]).
+    e1 = _email(message_id="<msg1@example.com>", uid="uid1", date=t0 - timedelta(hours=1))
 
     with patch("ingest.run.classify", return_value=FAKE_CLASSIFICATION):
         with patch("ingest.run._utcnow", return_value=t0):
@@ -279,7 +280,7 @@ def test_prefilter_rejected_email_not_classified(config_path, db_path, token_sto
         )
 
     assert result.fetched == 2
-    assert result.filtered == 1   # only the allowlisted email survived
+    assert result.passed_filter == 1   # only the allowlisted email survived
     assert result.classified == 1
     assert mock_classify.call_count == 1  # classify called only for the survivor
 
@@ -385,10 +386,6 @@ def test_main_exit_reauth(config_path, db_path, token_store_path):
     from ingest.oauth import ReauthRequired
     from ingest.run import main
 
-    class ReauthSource:
-        def fetch_recent(self, hours, limit):
-            raise ReauthRequired("token expired")
-
     with patch("ingest.run.run_ingestion", side_effect=ReauthRequired("expired")):
         with patch("sys.argv", ["ingest.run", "--user", "me@x.com",
                                 "--config", str(config_path),
@@ -430,7 +427,7 @@ def test_main_exit_ok(config_path, db_path, token_store_path):
     from ingest.run import main
 
     fake_result = IngestionResult(
-        fetched=1, filtered=1, classified=1, reused=0, errors=0, digest_id=42
+        fetched=1, passed_filter=1, classified=1, reused=0, errors=0, digest_id=42
     )
     with patch("ingest.run.run_ingestion", return_value=fake_result):
         with patch("sys.argv", ["ingest.run", "--user", "me@x.com",
@@ -438,3 +435,29 @@ def test_main_exit_ok(config_path, db_path, token_store_path):
                                 "--db", str(db_path),
                                 "--token-store", str(token_store_path)]):
             assert main() == EXIT_OK
+
+
+def test_main_exit_render(config_path, db_path, token_store_path):
+    """DigestRenderError maps to EXIT_RENDER (5)."""
+    from ingest.run import DigestRenderError, main
+
+    with patch("ingest.run.run_ingestion",
+               side_effect=DigestRenderError("render failed")):
+        with patch("sys.argv", ["ingest.run", "--user", "me@x.com",
+                                "--config", str(config_path),
+                                "--db", str(db_path),
+                                "--token-store", str(token_store_path)]):
+            assert main() == EXIT_RENDER
+
+
+def test_main_exit_render_on_unexpected_exception(config_path, db_path, token_store_path):
+    """Unexpected exceptions map to EXIT_RENDER (5) via catch-all."""
+    from ingest.run import main
+
+    with patch("ingest.run.run_ingestion",
+               side_effect=PermissionError("no access")):
+        with patch("sys.argv", ["ingest.run", "--user", "me@x.com",
+                                "--config", str(config_path),
+                                "--db", str(db_path),
+                                "--token-store", str(token_store_path)]):
+            assert main() == EXIT_RENDER

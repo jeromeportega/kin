@@ -35,12 +35,17 @@ EXIT_OK = 0
 EXIT_REAUTH = 2     # ReauthRequired
 EXIT_CONFIG = 3     # missing creds / token store / config
 EXIT_DB = 4         # sqlite write failure
+EXIT_RENDER = 5     # digest render / unexpected internal failure
+
+
+class DigestRenderError(RuntimeError):
+    """Raised when digest rendering fails; distinct from config errors."""
 
 
 @dataclass
 class IngestionResult:
     fetched: int
-    filtered: int
+    passed_filter: int
     classified: int
     reused: int
     errors: int
@@ -123,7 +128,7 @@ def run_ingestion(
     try:
         conn = db.connect(db_path)
 
-        fetched = filtered = classified = reused = errors = 0
+        fetched = passed_filter = classified = reused = errors = 0
         now = _utcnow()
 
         for msg in source.fetch_recent(hours=hours, limit=limit):
@@ -131,7 +136,7 @@ def run_ingestion(
 
             if not should_classify(msg, cfg):
                 continue
-            filtered += 1
+            passed_filter += 1
 
             try:
                 with conn:
@@ -196,7 +201,7 @@ def run_ingestion(
             hours=hours,
             model=MODEL,
             prompt_version=PROMPT_VERSION,
-            now=_utcnow(),
+            now=now,
             include_other=False,
         )
 
@@ -204,16 +209,26 @@ def run_ingestion(
             md = render_markdown(digest)
             js = render_json(digest)
         except Exception as exc:
-            raise RuntimeError(f"digest render failed: {exc}") from exc
+            raise DigestRenderError(f"digest render failed: {exc}") from exc
+
+        generated_at = datetime.fromisoformat(digest.generated_at).replace(
+            tzinfo=timezone.utc
+        )
+        window_start = datetime.fromisoformat(digest.window_start).replace(
+            tzinfo=timezone.utc
+        )
+        window_end = datetime.fromisoformat(digest.window_end).replace(
+            tzinfo=timezone.utc
+        )
 
         try:
             digest_id = db.insert_digest(
                 conn,
                 user_id=user_email,
-                generated_at=datetime.fromisoformat(digest.generated_at),
+                generated_at=generated_at,
                 window_hours=digest.window_hours,
-                window_start=datetime.fromisoformat(digest.window_start),
-                window_end=datetime.fromisoformat(digest.window_end),
+                window_start=window_start,
+                window_end=window_end,
                 model=MODEL,
                 prompt_version=PROMPT_VERSION,
                 include_other=digest.include_other,
@@ -227,13 +242,13 @@ def run_ingestion(
                 markdown=md,
                 json_payload=js,
             )
-        except sqlite3.DatabaseError as exc:
+        except (sqlite3.DatabaseError, ValueError) as exc:
             logger.warning("digest persistence failed: %s", exc)
             digest_id = None
 
         return IngestionResult(
             fetched=fetched,
-            filtered=filtered,
+            passed_filter=passed_filter,
             classified=classified,
             reused=reused,
             errors=errors,
@@ -292,16 +307,22 @@ def main() -> int:
     except FileNotFoundError as exc:
         logger.error("config or token not found: %s", exc)
         return EXIT_CONFIG
+    except DigestRenderError as exc:
+        logger.error("render error: %s", exc)
+        return EXIT_RENDER
     except RuntimeError as exc:
         logger.error("config error: %s", exc)
         return EXIT_CONFIG
     except sqlite3.DatabaseError as exc:
         logger.error("DB write failure: %s", exc)
         return EXIT_DB
+    except Exception as exc:
+        logger.error("unexpected error: %s", exc)
+        return EXIT_RENDER
 
     logger.info(
-        "fetched=%d filtered=%d classified=%d reused=%d errors=%d digest_id=%s",
-        result.fetched, result.filtered, result.classified,
+        "fetched=%d passed_filter=%d classified=%d reused=%d errors=%d digest_id=%s",
+        result.fetched, result.passed_filter, result.classified,
         result.reused, result.errors, result.digest_id,
     )
     return EXIT_OK
