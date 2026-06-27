@@ -1,6 +1,7 @@
 import NextAuth from "next-auth"
 import Google from "next-auth/providers/google"
 import { GOOGLE_SCOPE, SESSION_STRATEGY } from "@/auth.config"
+import { writeRefreshToken } from "@/lib/tokenStore"
 
 const secret = process.env.AUTH_SECRET
 const clientId = process.env.GOOGLE_CLIENT_ID
@@ -16,9 +17,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     Google({
       clientId,
       clientSecret,
-      authorization: { params: { scope: GOOGLE_SCOPE } },
+      authorization: {
+        params: { scope: GOOGLE_SCOPE, access_type: "offline", prompt: "consent" },
+      },
     }),
   ],
   session: { strategy: SESSION_STRATEGY },
   pages: { signIn: "/signin" },
+  callbacks: {
+    async jwt({ token, account }) {
+      if (account?.refresh_token && token.email) {
+        await writeRefreshToken(token.email, account.refresh_token)
+      }
+      return token
+    },
+    async session({ session }) {
+      return session
+    },
+  },
 })
