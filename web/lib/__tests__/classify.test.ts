@@ -44,6 +44,9 @@ describe("classify", () => {
     // email text + the closing fence that follows {{EMAIL}}
     expect(args.messages[0].content).toContain("Pay up")
     expect(args.messages[0].content.trimEnd().endsWith("---")).toBe(true)
+    // structured output via output_config.format — NOT the deprecated output_format
+    expect(args.output_config?.format).toBeDefined()
+    expect(args.output_format).toBeUndefined()
   })
 
   it("passes no sampling params (rejected on 4.x)", async () => {
