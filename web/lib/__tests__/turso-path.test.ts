@@ -3,10 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 vi.mock("server-only", () => ({}))
 
 const execute = vi.fn()
-vi.mock("@/lib/db", () => ({
-  usingTurso: () => true,
-  dbClient: () => ({ execute }),
-}))
+vi.mock("@/lib/db", () => ({ dbClient: () => ({ execute }) }))
 
 import { readKinConfig, applyTuning } from "@/lib/kinConfig"
 import { writeRefreshToken, readRefreshToken } from "@/lib/tokenStore"

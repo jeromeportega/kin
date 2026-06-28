@@ -9,11 +9,6 @@ import { createClient, type Client } from "@libsql/client"
 
 let _client: Client | null = null
 
-/** True when the app should read/write Turso rather than local files (config/tokens). */
-export function usingTurso(): boolean {
-  return !!process.env.TURSO_DATABASE_URL
-}
-
 /** Shared libSQL client — Turso in production, the local SQLite file in dev. */
 export function dbClient(): Client {
   if (!_client) {

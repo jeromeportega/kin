@@ -1,35 +1,17 @@
 [project]
 name = "kin"
 version = "0.1.0"
-description = "Local-first AI for personal and family workflows."
+description = "AI email triage. The runtime is the Next.js app in web/; this Python is the classifier eval guard."
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.69",
-    "imap-tools>=1.6",
-    "libsql-client>=0.3.1",
     "pydantic>=2.7",
-    "python-dotenv>=1.0",
-    "pyyaml>=6",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8",
-    "hypothesis>=6",
-    "icalendar>=5",
 ]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
-
-[tool.uv.workspace]
-members = ["api", "ingest"]
-
-# libsql-client 0.3.1 mis-declares sphinx-press-theme (a docs theme) as a runtime
-# dependency, dragging Sphinx + ~20 doc packages into the tree. Its real runtime
-# dependency is aiohttp; override the metadata to drop the bloat — this matters
-# for the Vercel function size limit.
-[[tool.uv.dependency-metadata]]
-name = "libsql-client"
-version = "0.3.1"
-requires-dist = ["aiohttp"]

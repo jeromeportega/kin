@@ -17,10 +17,10 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 fail=0
 
-echo "== python: app + api =="
-# --all-packages provisions uv WORKSPACE member deps (e.g. api/'s fastapi);
-# plain `uv run pytest` only installs the root package's env.
-uv run --all-packages pytest -q || { echo "  ✗ python suite FAILED"; fail=1; }
+echo "== python: classifier eval guard =="
+# The Python that remains is the classifier + schemas + app.eval (the accuracy
+# guard); the runtime pipeline is the Next.js app in web/.
+uv run pytest -q || { echo "  ✗ python suite FAILED"; fail=1; }
 
 if [ -f web/package.json ]; then
   # Bare gate worktree has no node_modules — install if missing.
