@@ -9,6 +9,7 @@ import { GOOGLE_SCOPE, SESSION_STRATEGY } from "@/auth.config"
 // Edge Runtime. The proxy only needs to DECODE the session (provider config is
 // enough); the server-only jwt/tokenStore callback lives in "@/auth".
 const { auth } = NextAuth({
+  trustHost: true,
   secret: process.env.AUTH_SECRET,
   providers: [
     Google({
@@ -23,18 +24,18 @@ const { auth } = NextAuth({
   pages: { signIn: "/signin" },
 })
 
-const BASE_URL =
-  process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000"
-
+// Redirect relative to the request's own origin so it works on any domain
+// (production, preview, localhost) without a hardcoded base URL.
 export function guardDashboard(
-  session: Session | null
+  session: Session | null,
+  origin: string
 ): NextResponse | undefined {
   if (!session) {
-    return NextResponse.redirect(new URL("/signin", BASE_URL))
+    return NextResponse.redirect(new URL("/signin", origin))
   }
 }
 
-export default auth((req) => guardDashboard(req.auth))
+export default auth((req) => guardDashboard(req.auth, req.nextUrl.origin))
 
 export const config = {
   matcher: ["/dashboard/:path*"],

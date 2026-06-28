@@ -20,8 +20,11 @@ one Vercel project from this `web/` directory.
 | `AUTH_GOOGLE_ID` | *(Google OAuth client id)* | sign-in **and** Gmail ingest |
 | `AUTH_GOOGLE_SECRET` | *(Google OAuth client secret)* | sign-in **and** Gmail ingest |
 | `AUTH_SECRET` | *(random 32+ bytes — `openssl rand -base64 32`)* | next-auth session |
-| `AUTH_URL` | `https://<your-vercel-domain>` | next-auth OAuth callback base |
 | `CRON_SECRET` | *(random string)* | guards `/api/cron` |
+
+(No `AUTH_URL` needed — `trustHost: true` makes next-auth derive its URL + OAuth
+callback from the request host. Do **not** set `AUTH_URL`; an invalid value breaks
+next-auth.)
 
 (Auth, the proxy, and the ingest all accept **either** name — `AUTH_GOOGLE_*` or
 `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` — so the two above are sufficient.)
