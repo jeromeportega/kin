@@ -27,7 +27,7 @@ vi.mock("next/server", () => ({
 
 // auth.config.ts has no next-auth dependency — safe to import directly
 import { GOOGLE_SCOPE, SESSION_STRATEGY } from "@/auth.config"
-import { guardDashboard } from "@/middleware"
+import { guardDashboard } from "@/proxy"
 
 // ─── Google provider scope ───────────────────────────────────────────────────
 
