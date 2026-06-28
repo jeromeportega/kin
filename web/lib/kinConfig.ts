@@ -1,7 +1,7 @@
 import "server-only"
 import fs from "fs/promises"
 import path from "path"
-import { usingTurso, turso } from "./db"
+import { usingTurso, dbClient } from "./db"
 
 // kin.toml is the household filter config the Python pipeline reads (sender
 // allow/blocklists + subject keywords). The tuning UI edits it from the web
@@ -51,7 +51,7 @@ function parse(text: string): KinConfig {
 
 export async function readKinConfig(userId?: string): Promise<KinConfig> {
   if (usingTurso() && userId) {
-    const rs = await turso().execute({
+    const rs = await dbClient().execute({
       sql: "SELECT kind, value FROM filter_entries WHERE user_id = ? ORDER BY kind, value",
       args: [userId],
     })
@@ -116,7 +116,7 @@ export async function applyTuning(
     for (const key of ARRAY_KEYS) {
       let n = 0
       for (const value of additions[key]) {
-        const rs = await turso().execute({
+        const rs = await dbClient().execute({
           sql: "INSERT OR IGNORE INTO filter_entries (user_id, kind, value) VALUES (?, ?, ?)",
           args: [userId, key, value.toLowerCase()],
         })
