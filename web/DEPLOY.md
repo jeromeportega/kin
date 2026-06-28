@@ -23,8 +23,8 @@ one Vercel project from this `web/` directory.
 | `AUTH_URL` | `https://<your-vercel-domain>` | next-auth OAuth callback base |
 | `CRON_SECRET` | *(random string)* | guards `/api/cron` |
 
-(The ingest reads `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` too, but falls back to
-`AUTH_GOOGLE_*`, so the two above are sufficient.)
+(Auth, the proxy, and the ingest all accept **either** name — `AUTH_GOOGLE_*` or
+`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` — so the two above are sufficient.)
 
 ## 3. Google OAuth redirect URI
 

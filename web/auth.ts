@@ -6,13 +6,19 @@ import { GOOGLE_SCOPE, SESSION_STRATEGY } from "@/auth.config"
 // graph that the Edge Middleware bundles — a static import makes the edge runtime
 // throw "Node.js module not supported in the Edge Runtime" and every route 500s.
 
+// Accept either env-var name (GOOGLE_CLIENT_ID or Auth.js's AUTH_GOOGLE_ID) so
+// the deploy works with either convention — matching lib/ingest.ts.
 const secret = process.env.AUTH_SECRET
-const clientId = process.env.GOOGLE_CLIENT_ID
-const clientSecret = process.env.GOOGLE_CLIENT_SECRET
+const clientId = process.env.GOOGLE_CLIENT_ID ?? process.env.AUTH_GOOGLE_ID
+const clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? process.env.AUTH_GOOGLE_SECRET
 
-if (!secret) throw new Error("AUTH_SECRET is required")
-if (!clientId) throw new Error("GOOGLE_CLIENT_ID is required")
-if (!clientSecret) throw new Error("GOOGLE_CLIENT_SECRET is required")
+// Validate at runtime only. During `next build` page-data collection the env
+// vars may be absent, and a module-load throw there fails the build (it did).
+if (process.env.NEXT_PHASE !== "phase-production-build") {
+  if (!secret) throw new Error("AUTH_SECRET is required")
+  if (!clientId) throw new Error("GOOGLE_CLIENT_ID or AUTH_GOOGLE_ID is required")
+  if (!clientSecret) throw new Error("GOOGLE_CLIENT_SECRET or AUTH_GOOGLE_SECRET is required")
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret,

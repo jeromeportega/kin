@@ -4,16 +4,16 @@ import { NextResponse } from "next/server"
 import type { Session } from "next-auth"
 import { GOOGLE_SCOPE, SESSION_STRATEGY } from "@/auth.config"
 
-// Edge-safe auth instance for the middleware ONLY. It must NOT import "@/auth",
-// which transitively pulls in lib/tokenStore (Node fs/path) and crashes the Edge
-// Runtime. The middleware only needs to DECODE the session (provider config is
-// enough); the Node-only jwt/tokenStore callback lives in "@/auth" for the server.
+// Edge-safe auth instance for the proxy ONLY. It must NOT import "@/auth", which
+// transitively pulls in lib/tokenStore -> lib/db (server-only) and crashes the
+// Edge Runtime. The proxy only needs to DECODE the session (provider config is
+// enough); the server-only jwt/tokenStore callback lives in "@/auth".
 const { auth } = NextAuth({
   secret: process.env.AUTH_SECRET,
   providers: [
     Google({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      clientId: process.env.GOOGLE_CLIENT_ID ?? process.env.AUTH_GOOGLE_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? process.env.AUTH_GOOGLE_SECRET,
       authorization: {
         params: { scope: GOOGLE_SCOPE, access_type: "offline", prompt: "consent" },
       },
