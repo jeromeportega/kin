@@ -5,6 +5,7 @@ import { mintAccessToken, fetchRecent, ReauthRequired } from "./gmail"
 import { shouldClassify, type FetchedEmail, type FilterConfig } from "./filter"
 import { classify, MODEL, PROMPT_VERSION } from "./classify"
 import { upsertEmail, findClassification, insertClassification } from "./writes"
+import { runDigest } from "./digest"
 
 // TS port of ingest/run.py — fetch recent Gmail, filter, classify, persist. The
 // digest build is increment 5. (ingest/run.py does not touch the `runs` table.)
@@ -121,6 +122,9 @@ export async function runIngest(
       errors += 1
     }
   }
+
+  // Build the daily digest from the freshly-persisted classifications.
+  await runDigest(userId, 24)
 
   return { fetched, filtered, classified, reused, errors }
 }
