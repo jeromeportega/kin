@@ -1,0 +1,156 @@
+import "server-only"
+import type { FetchedEmail } from "./filter"
+
+// TS port of ingest/oauth.py + ingest/gmail_source.py. Both the OAuth token
+// refresh and the Gmail REST calls are plain fetch() — no googleapis SDK.
+
+const TOKEN_URL = "https://oauth2.googleapis.com/token"
+const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me"
+const MAX_BODY_CHARS = 4000
+
+/** Raised when the refresh token has been revoked or has expired. */
+export class ReauthRequired extends Error {}
+
+/** Mint a short-lived Gmail access token from a stored refresh token. */
+export async function mintAccessToken(
+  refreshToken: string,
+  clientId: string,
+  clientSecret: string
+): Promise<string> {
+  const res = await fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+    }),
+  })
+  if (!res.ok) {
+    const body = await res.text()
+    // invalid_grant (revoked/expired) comes back as 400/401.
+    if (res.status === 400 || res.status === 401) {
+      throw new ReauthRequired(`token refresh failed: ${res.status} ${body}`)
+    }
+    throw new Error(`token refresh failed: ${res.status} ${body}`)
+  }
+  const data = (await res.json()) as { access_token: string }
+  return data.access_token
+}
+
+interface GmailPayload {
+  mimeType?: string
+  headers?: { name: string; value: string }[]
+  body?: { data?: string }
+  parts?: GmailPayload[]
+}
+interface GmailMessage {
+  id: string
+  internalDate?: string
+  payload?: GmailPayload
+}
+
+export function decodeB64Url(data: string): string {
+  if (!data) return ""
+  return Buffer.from(data.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8")
+}
+
+export function stripHtml(html: string): string {
+  const text = html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+}
+
+function extractParts(payload: GmailPayload): [string, string] {
+  const mime = payload.mimeType ?? ""
+  if (mime === "text/plain") return [payload.body?.data ? decodeB64Url(payload.body.data) : "", ""]
+  if (mime === "text/html") return ["", payload.body?.data ? decodeB64Url(payload.body.data) : ""]
+  let plain = ""
+  let html = ""
+  for (const part of payload.parts ?? []) {
+    const [p, h] = extractParts(part)
+    if (!plain && p) plain = p
+    if (!html && h) html = h
+  }
+  return [plain, html]
+}
+
+function header(headers: { name: string; value: string }[], name: string): string {
+  const lc = name.toLowerCase()
+  return headers.find((h) => h.name.toLowerCase() === lc)?.value ?? ""
+}
+
+/** Parse the Date header (RFC 2822) → ISO 8601 UTC (…+00:00). Falls back to internalDate, then now. */
+function parseDateIso(raw: string, internalMs: string): string {
+  let d: Date | null = null
+  if (raw) {
+    const t = new Date(raw)
+    if (!Number.isNaN(t.getTime())) d = t
+  }
+  if (!d && internalMs) {
+    const ms = Number(internalMs)
+    if (Number.isFinite(ms)) d = new Date(ms)
+  }
+  if (!d) d = new Date()
+  return d.toISOString().replace("Z", "+00:00")
+}
+
+function toFetched(msg: GmailMessage): FetchedEmail {
+  const payload = msg.payload ?? {}
+  const headers = payload.headers ?? []
+  const [plain, html] = extractParts(payload)
+  const rawBody = plain || stripHtml(html)
+  const truncated = rawBody.length > MAX_BODY_CHARS
+  const textBody = truncated ? rawBody.slice(0, MAX_BODY_CHARS) : rawBody
+
+  let messageId = header(headers, "Message-ID").trim()
+  if (!messageId) messageId = `<gmail-${msg.id}@mail.gmail.com>`
+
+  return {
+    uid: msg.id,
+    message_id: messageId,
+    from_addr: header(headers, "From").toLowerCase(),
+    subject: header(headers, "Subject"),
+    date: parseDateIso(header(headers, "Date"), msg.internalDate ?? ""),
+    text_body: textBody,
+    truncated,
+  }
+}
+
+/** Fetch recent INBOX messages from Gmail, mapped to FetchedEmail. */
+export async function fetchRecent(opts: {
+  accessToken: string
+  hours: number
+  limit: number
+  folder?: string
+}): Promise<FetchedEmail[]> {
+  const { accessToken, hours, limit, folder = "INBOX" } = opts
+  const cutoff = Math.floor((Date.now() - hours * 3_600_000) / 1000)
+  const auth = { Authorization: `Bearer ${accessToken}` }
+
+  const listUrl =
+    `${GMAIL_API}/messages?labelIds=${encodeURIComponent(folder)}` +
+    `&q=${encodeURIComponent(`after:${cutoff}`)}&maxResults=${limit}`
+  const listRes = await fetch(listUrl, { headers: auth })
+  if (!listRes.ok) throw new Error(`Gmail list failed: ${listRes.status}`)
+  const list = (await listRes.json()) as { messages?: { id: string }[] }
+
+  const out: FetchedEmail[] = []
+  for (const ref of list.messages ?? []) {
+    const getRes = await fetch(`${GMAIL_API}/messages/${ref.id}?format=full`, { headers: auth })
+    if (getRes.status === 404) continue // deleted between list and get
+    if (!getRes.ok) throw new Error(`Gmail get failed: ${getRes.status}`)
+    out.push(toFetched((await getRes.json()) as GmailMessage))
+  }
+  return out
+}
