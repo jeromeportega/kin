@@ -13,9 +13,12 @@ const h = vi.hoisted(() => {
     upsertEmail: vi.fn(),
     findClassification: vi.fn(),
     insertClassification: vi.fn(),
+    runDigest: vi.fn(),
     ReauthRequired,
   }
 })
+
+vi.mock("@/lib/digest", () => ({ runDigest: h.runDigest }))
 
 vi.mock("@/lib/db", () => ({ dbClient: () => ({ execute: h.execute }) }))
 vi.mock("@/lib/tokenStore", () => ({ readRefreshToken: h.readRefreshToken }))
