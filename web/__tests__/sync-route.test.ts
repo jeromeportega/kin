@@ -8,173 +8,88 @@ vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }))
 const mockAuth = vi.hoisted(() => vi.fn())
 vi.mock("@/auth", () => ({ auth: mockAuth }))
 
-const mockSpawnIngestion = vi.hoisted(() => vi.fn<(email: string) => Promise<number>>())
-vi.mock("@/lib/spawnIngestion", () => ({
-  spawnIngestion: mockSpawnIngestion,
-  TIMEOUT_EXIT: 124,
-}))
+const mockRunIngest = vi.hoisted(() => vi.fn())
+vi.mock("@/lib/ingest", () => ({ runIngest: mockRunIngest }))
 
+// The route does `instanceof ReauthRequired`, so use the real class (gmail.ts has
+// no side effects beyond importing the mocked server-only).
+import { ReauthRequired } from "@/lib/gmail"
 import { POST } from "@/app/api/sync/route"
 
-beforeEach(() => {
-  vi.clearAllMocks()
-})
+beforeEach(() => vi.clearAllMocks())
 
-/** Drain all pending microtasks (more robust than a single Promise.resolve()). */
 const flushMicrotasks = () => new Promise<void>((r) => setImmediate(r))
+const RESULT = { fetched: 3, filtered: 2, classified: 1, reused: 1, errors: 0 }
 
 describe("POST /api/sync", () => {
-  // ─── AC1: no session → 401, spawn not called ──────────────────────────────
-
-  it("returns 401 and does not spawn when auth() returns null", async () => {
+  it("returns 401 and does not ingest when auth() is null", async () => {
     mockAuth.mockResolvedValueOnce(null)
-
     const res = await POST()
-
     expect(res.status).toBe(401)
-    expect(mockSpawnIngestion).not.toHaveBeenCalled()
+    expect(mockRunIngest).not.toHaveBeenCalled()
   })
 
-  it("returns 401 when session exists but has no email", async () => {
+  it("returns 401 when the session has no email", async () => {
     mockAuth.mockResolvedValueOnce({ user: {} })
-
     const res = await POST()
-
     expect(res.status).toBe(401)
-    expect(mockSpawnIngestion).not.toHaveBeenCalled()
-    const body = await res.json()
-    expect(body.error).toContain("session has no email")
+    expect(mockRunIngest).not.toHaveBeenCalled()
   })
 
-  // ─── AC2 happy path: EXIT_OK → 200 + revalidatePath ──────────────────────
-
-  it("returns 200 {ok:true} and revalidates /dashboard on EXIT_OK (0)", async () => {
+  it("returns 200 with the result and revalidates on success", async () => {
     mockAuth.mockResolvedValueOnce({ user: { email: "user@example.com" } })
-    mockSpawnIngestion.mockResolvedValueOnce(0)
-
+    mockRunIngest.mockResolvedValueOnce(RESULT)
     const res = await POST()
-
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ok: true })
-    expect(mockRevalidatePath).toHaveBeenCalledOnce()
+    expect(await res.json()).toEqual({ ok: true, ...RESULT })
     expect(mockRevalidatePath).toHaveBeenCalledWith("/dashboard")
   })
 
-  it("spawns with session.user.email as --user argument", async () => {
-    mockAuth.mockResolvedValueOnce({ user: { email: "user@example.com" } })
-    mockSpawnIngestion.mockResolvedValueOnce(0)
-
+  it("[S1] ingests with the session email, never a client-supplied one", async () => {
+    mockAuth.mockResolvedValueOnce({ user: { email: "session@example.com" } })
+    mockRunIngest.mockResolvedValueOnce(RESULT)
     await POST()
-
-    expect(mockSpawnIngestion).toHaveBeenCalledWith("user@example.com")
+    expect(mockRunIngest).toHaveBeenCalledWith("session@example.com")
+    expect(mockRunIngest).not.toHaveBeenCalledWith("attacker@example.com")
   })
 
-  // ─── AC3: EXIT_REAUTH → 409 {reauth:true} ─────────────────────────────────
-
-  it("returns 409 {reauth:true} on EXIT_REAUTH (2)", async () => {
+  it("returns 409 {reauth:true} when runIngest throws ReauthRequired", async () => {
     mockAuth.mockResolvedValueOnce({ user: { email: "user@example.com" } })
-    mockSpawnIngestion.mockResolvedValueOnce(2)
-
+    mockRunIngest.mockRejectedValueOnce(new ReauthRequired("revoked"))
     const res = await POST()
-
     expect(res.status).toBe(409)
     expect(await res.json()).toEqual({ reauth: true })
     expect(mockRevalidatePath).not.toHaveBeenCalled()
   })
 
-  // ─── timeout: TIMEOUT_EXIT → 504 ─────────────────────────────────────────
-
-  it("returns 504 on TIMEOUT_EXIT (124)", async () => {
+  it("returns 500 {ok:false} on a generic error", async () => {
     mockAuth.mockResolvedValueOnce({ user: { email: "user@example.com" } })
-    mockSpawnIngestion.mockResolvedValueOnce(124)
-
+    mockRunIngest.mockRejectedValueOnce(new Error("boom"))
     const res = await POST()
-
-    expect(res.status).toBe(504)
-    expect(await res.json()).toHaveProperty("error")
+    expect(res.status).toBe(500)
+    expect((await res.json()).ok).toBe(false)
     expect(mockRevalidatePath).not.toHaveBeenCalled()
   })
-
-  // ─── error: other non-zero → 500 {ok:false} ───────────────────────────────
-
-  it("returns 500 {ok:false} on other non-zero exit codes", async () => {
-    for (const code of [1, 3, 4, 5]) {
-      vi.clearAllMocks()
-      mockAuth.mockResolvedValueOnce({ user: { email: "user@example.com" } })
-      mockSpawnIngestion.mockResolvedValueOnce(code)
-
-      const res = await POST()
-
-      expect(res.status).toBe(500)
-      expect(await res.json()).toEqual({ ok: false })
-      expect(mockRevalidatePath).not.toHaveBeenCalled()
-    }
-  })
-
-  // ─── AC1/S1 identity — critical ───────────────────────────────────────────
-
-  it("[S1] invokes ingestion with session email, not any client-supplied email", async () => {
-    mockAuth.mockResolvedValueOnce({ user: { email: "session@example.com" } })
-    mockSpawnIngestion.mockResolvedValueOnce(0)
-
-    await POST()
-
-    expect(mockSpawnIngestion).toHaveBeenCalledWith("session@example.com")
-    expect(mockSpawnIngestion).not.toHaveBeenCalledWith("attacker@example.com")
-  })
-
-  // ─── method guard / CSRF ──────────────────────────────────────────────────
-
-  it("only exports POST (GET is not exported)", async () => {
-    const mod = await import("@/app/api/sync/route")
-    expect(mod.POST).toBeTypeOf("function")
-    expect((mod as Record<string, unknown>).GET).toBeUndefined()
-  })
-
-  // ─── AC2 read-back: 200 triggers revalidatePath ───────────────────────────
-
-  it("does not call revalidatePath on failed sync (non-zero exit)", async () => {
-    mockAuth.mockResolvedValueOnce({ user: { email: "user@example.com" } })
-    mockSpawnIngestion.mockResolvedValueOnce(1)
-
-    await POST()
-
-    expect(mockRevalidatePath).not.toHaveBeenCalled()
-  })
-
-  // ─── 401 structured body ─────────────────────────────────────────────────
-
-  it("returns a JSON error body on 401", async () => {
-    mockAuth.mockResolvedValueOnce(null)
-
-    const res = await POST()
-
-    expect(res.status).toBe(401)
-    const body = await res.json()
-    expect(body).toHaveProperty("error")
-  })
-
-  // ─── concurrency guard: 429 when same user already in flight ─────────────
 
   it("returns 429 when a sync is already in progress for the same user", async () => {
     mockAuth.mockResolvedValueOnce({ user: { email: "user@example.com" } })
     mockAuth.mockResolvedValueOnce({ user: { email: "user@example.com" } })
 
-    let resolveFirst!: (code: number) => void
-    mockSpawnIngestion.mockReturnValueOnce(new Promise<number>((r) => { resolveFirst = r }))
+    let resolveFirst!: (r: unknown) => void
+    mockRunIngest.mockReturnValueOnce(new Promise((r) => (resolveFirst = r)))
 
-    // Start first sync; it will be suspended at await spawnIngestion()
-    const firstPromise = POST()
-    // Drain all pending microtasks so the first POST advances past inFlight.add()
+    const first = POST()
     await flushMicrotasks()
+    const second = await POST()
+    expect(second.status).toBe(429)
 
-    const secondResponse = await POST()
-    expect(secondResponse.status).toBe(429)
-    const body = await secondResponse.json()
-    expect(body).toHaveProperty("error")
+    resolveFirst(RESULT)
+    await first
+  })
 
-    // Clean up: resolve the first sync
-    resolveFirst(0)
-    await firstPromise
+  it("only exports POST (no GET)", async () => {
+    const mod = await import("@/app/api/sync/route")
+    expect(mod.POST).toBeTypeOf("function")
+    expect((mod as Record<string, unknown>).GET).toBeUndefined()
   })
 })
