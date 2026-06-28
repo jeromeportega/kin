@@ -60,7 +60,9 @@ export async function classify(
     max_tokens: MAX_TOKENS,
     system: [{ type: "text", text: instructions, cache_control: { type: "ephemeral" } }],
     messages: [{ role: "user", content: emailText + closing }],
-    output_format: zodOutputFormat(EmailClassificationSchema),
+    // output_config.format (not the deprecated top-level output_format, which the
+    // API now rejects). zodOutputFormat makes parsed_output a validated instance.
+    output_config: { format: zodOutputFormat(EmailClassificationSchema) },
   })
 
   if (!message.parsed_output) {
