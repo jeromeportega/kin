@@ -5,7 +5,7 @@ vi.mock("server-only", () => ({}))
 const execute = vi.fn()
 vi.mock("@/lib/db", () => ({
   usingTurso: () => true,
-  turso: () => ({ execute }),
+  dbClient: () => ({ execute }),
 }))
 
 import { readKinConfig, applyTuning } from "@/lib/kinConfig"

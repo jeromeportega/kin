@@ -1,25 +1,32 @@
 import "server-only"
+import path from "path"
 import { createClient, type Client } from "@libsql/client"
 
-// The web layer talks to the same DB as the Python pipeline. In production
-// (Vercel) that's Turso, reached over HTTP; locally there is no TURSO_DATABASE_URL
-// and the config/token code paths use local files instead — so this client is
-// only ever instantiated on the Turso path (no embedded/native driver needed).
+// The web layer talks to the same DB as the Python pipeline via libSQL:
+// Turso over HTTP in production (Vercel), or the local SQLite file in dev. The
+// reads (digest, classifications) always use this client; the config/token code
+// uses it only on the Turso path (usingTurso()) and local files otherwise.
 
 let _client: Client | null = null
 
-/** True when the app should read/write the Turso DB rather than local files. */
+/** True when the app should read/write Turso rather than local files (config/tokens). */
 export function usingTurso(): boolean {
   return !!process.env.TURSO_DATABASE_URL
 }
 
-/** Shared libSQL client for Turso. Only call when usingTurso() is true. */
-export function turso(): Client {
+/** Shared libSQL client — Turso in production, the local SQLite file in dev. */
+export function dbClient(): Client {
   if (!_client) {
-    _client = createClient({
-      url: process.env.TURSO_DATABASE_URL!,
-      authToken: process.env.TURSO_AUTH_TOKEN,
-    })
+    if (process.env.TURSO_DATABASE_URL) {
+      _client = createClient({
+        url: process.env.TURSO_DATABASE_URL,
+        authToken: process.env.TURSO_AUTH_TOKEN,
+      })
+    } else {
+      // Resolved at call time so the bundler doesn't trace the whole project.
+      const file = process.env.KIN_DB_PATH ?? path.resolve(process.cwd(), "../data/kin.sqlite")
+      _client = createClient({ url: `file:${file}` })
+    }
   }
   return _client
 }
