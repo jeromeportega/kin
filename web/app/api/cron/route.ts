@@ -2,6 +2,9 @@ import "server-only"
 import { dbClient } from "@/lib/db"
 import { runIngest } from "@/lib/ingest"
 
+// Ingest + digest for every user can run long.
+export const maxDuration = 300
+
 // Daily cron (scheduled in vercel.json): run the ingest + digest for every user
 // with a stored Gmail token. Vercel sends `Authorization: Bearer $CRON_SECRET`.
 export async function GET(req: Request) {

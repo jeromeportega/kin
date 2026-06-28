@@ -4,6 +4,9 @@ import { auth } from "@/auth"
 import { runIngest } from "@/lib/ingest"
 import { ReauthRequired } from "@/lib/gmail"
 
+// The pipeline (Gmail fetch + classify per email) can run well past the default.
+export const maxDuration = 300
+
 // Process-local dedup guard. In multi-instance deployments each instance has its
 // own Set, so this only prevents duplicate syncs within a single process.
 const inFlight = new Set<string>()
