@@ -21,6 +21,10 @@ if (process.env.NEXT_PHASE !== "phase-production-build") {
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  // Trust the deployment host so next-auth derives its URL + OAuth callback from
+  // the request (e.g. https://kin-one-alpha.vercel.app/api/auth/callback/google)
+  // instead of a hardcoded AUTH_URL. Auto-enabled on Vercel; explicit for clarity.
+  trustHost: true,
   secret,
   providers: [
     Google({
