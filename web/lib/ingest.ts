@@ -6,6 +6,7 @@ import { shouldClassify, type FetchedEmail, type FilterConfig } from "./filter"
 import { classify, MODEL, PROMPT_VERSION } from "./classify"
 import { upsertEmail, findClassification, insertClassification } from "./writes"
 import { runDigest } from "./digest"
+import { LOOKBACK_HOURS } from "./constants"
 
 // TS port of ingest/run.py — fetch recent Gmail, filter, classify, persist. The
 // digest build is increment 5. (ingest/run.py does not touch the `runs` table.)
@@ -62,7 +63,7 @@ export async function runIngest(
   userId: string,
   opts: { hours?: number; limit?: number } = {}
 ): Promise<IngestResult> {
-  const hours = opts.hours ?? 24
+  const hours = opts.hours ?? LOOKBACK_HOURS
   const limit = opts.limit ?? 50
 
   const cfg = await readFilterConfig(userId)
@@ -123,8 +124,8 @@ export async function runIngest(
     }
   }
 
-  // Build the daily digest from the freshly-persisted classifications.
-  await runDigest(userId, 24)
+  // Build the digest over the same lookback window as the fetch.
+  await runDigest(userId, LOOKBACK_HOURS)
 
   return { fetched, filtered, classified, reused, errors }
 }

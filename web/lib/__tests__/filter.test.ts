@@ -54,16 +54,24 @@ describe("shouldClassify", () => {
     const c = cfg({ sender_blocklist: ["spam@x.com"], sender_allowlist: ["spam@x.com"] })
     expect(shouldClassify(email({ from_addr: "spam@x.com" }), c)).toBe(false)
   })
-  it("passes an allowlisted sender", () => {
+  it("loose by default: classifies everything when no allow-rules are set", () => {
+    expect(shouldClassify(email(), cfg())).toBe(true)
+  })
+  it("loose mode still drops blocklisted senders", () => {
+    const c = cfg({ sender_blocklist: ["spam@x.com"] })
+    expect(shouldClassify(email({ from_addr: "spam@x.com" }), c)).toBe(false)
+  })
+  it("strict mode (allow-rules set) passes an allowlisted sender", () => {
     expect(shouldClassify(email(), cfg({ sender_allowlist: ["a@x.com"] }))).toBe(true)
   })
-  it("passes on a subject keyword", () => {
+  it("strict mode passes on a subject keyword", () => {
     expect(shouldClassify(email({ subject: "Invoice 12" }), cfg({ subject_keywords: ["invoice"] }))).toBe(true)
   })
-  it("passes on a body keyword", () => {
+  it("strict mode passes on a body keyword", () => {
     expect(shouldClassify(email({ text_body: "tuition due" }), cfg({ body_keywords: ["tuition"] }))).toBe(true)
   })
-  it("drops when nothing matches", () => {
-    expect(shouldClassify(email(), cfg())).toBe(false)
+  it("strict mode drops a non-matching email once allow-rules exist", () => {
+    const c = cfg({ sender_allowlist: ["a@x.com"] })
+    expect(shouldClassify(email({ from_addr: "nobody@z.com", subject: "x", text_body: "y" }), c)).toBe(false)
   })
 })

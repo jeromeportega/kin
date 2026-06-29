@@ -66,10 +66,10 @@ describe("fetchDigest", () => {
     expect(await fetchDigest("jerome")).toBeNull()
   })
 
-  it("queries scoped to the user_id and the 24h window", async () => {
+  it("queries scoped to the user_id and the lookback window", async () => {
     execute.mockResolvedValueOnce({ rows: [] })
     await fetchDigest("jerome+test")
-    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ args: ["jerome+test", 24] }))
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({ args: ["jerome+test", 24 * 7] }))
   })
 
   it("throws when userId is empty", async () => {
