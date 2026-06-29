@@ -43,12 +43,22 @@ export function textContainsAny(text: string, keywords: string[]): boolean {
 }
 
 /**
- * 1. Blocklisted sender → drop.
- * 2. Otherwise pass if the sender is allowlisted, or a configured keyword
- *    appears in the subject or body.
+ * Loose by default (opt-out):
+ * 1. Blocklisted sender → always drop.
+ * 2. No allow-rules configured → classify everything, and let the model + the
+ *    blocklist (built by muting in the review flow) do the triage.
+ * 3. Allow-rules configured → strict mode: pass only if the sender is allowlisted
+ *    or a keyword appears in the subject/body.
  */
 export function shouldClassify(email: FetchedEmail, cfg: FilterConfig): boolean {
   if (senderMatches(email.from_addr, cfg.sender_blocklist)) return false
+
+  const hasAllowRules =
+    cfg.sender_allowlist.length > 0 ||
+    cfg.subject_keywords.length > 0 ||
+    cfg.body_keywords.length > 0
+  if (!hasAllowRules) return true
+
   if (senderMatches(email.from_addr, cfg.sender_allowlist)) return true
   if (textContainsAny(email.subject, cfg.subject_keywords)) return true
   if (textContainsAny(email.text_body, cfg.body_keywords)) return true

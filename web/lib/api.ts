@@ -1,12 +1,14 @@
 import "server-only"
 import type { Digest, Classification } from "@/lib/types"
 import { dbClient } from "./db"
+import { LOOKBACK_HOURS } from "./constants"
 
 // Reads query the DB directly via libSQL (Turso in prod, the local SQLite file in
 // dev) — no separate API service. These mirror app/db.fetch_latest_digest_json and
 // fetch_classifications_window.
 
-const DIGEST_WINDOW_HOURS = 24
+// Must match the window the digest is built with (ingest → runDigest).
+const DIGEST_WINDOW_HOURS = LOOKBACK_HOURS
 
 // Match Python's datetime.isoformat() (…+00:00) so string comparison against the
 // stored email dates behaves identically.
