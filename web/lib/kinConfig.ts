@@ -67,3 +67,22 @@ export async function applyTuning(
   }
   return added
 }
+
+// Mute / unmute a sender — the in-flow blocklist. Muted senders are skipped by
+// the pipeline (shouldClassify) before classification, so they cost nothing and
+// drop out of the dashboard.
+export async function muteSender(userId: string, sender: string): Promise<void> {
+  const value = sender.trim().toLowerCase()
+  if (!value) return
+  await dbClient().execute({
+    sql: "INSERT OR IGNORE INTO filter_entries (user_id, kind, value) VALUES (?, 'sender_blocklist', ?)",
+    args: [userId, value],
+  })
+}
+
+export async function unmuteSender(userId: string, sender: string): Promise<void> {
+  await dbClient().execute({
+    sql: "DELETE FROM filter_entries WHERE user_id = ? AND kind = 'sender_blocklist' AND value = ?",
+    args: [userId, sender.trim().toLowerCase()],
+  })
+}

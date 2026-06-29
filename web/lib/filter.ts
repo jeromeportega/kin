@@ -19,16 +19,25 @@ export interface FilterConfig {
   body_keywords: string[]
 }
 
-/** Exact address (`a@x.com`) or domain suffix (`@x.com`, matching subdomains too). */
-export function senderMatches(addr: string, allowlist: string[]): boolean {
-  addr = addr.trim().toLowerCase()
+/** Pull the bare address out of a From header value, lowercased.
+ *  "Name <a@x.com>" → "a@x.com"; "a@x.com" → "a@x.com". */
+export function extractAddress(raw: string): string {
+  const m = raw.match(/<([^>]+)>/)
+  return (m ? m[1] : raw).trim().toLowerCase()
+}
+
+/** Exact address (`a@x.com`) or domain suffix (`@x.com`, matching subdomains too).
+ *  Handles "Display Name <addr>" From headers by extracting the address first. */
+export function senderMatches(addr: string, list: string[]): boolean {
+  addr = extractAddress(addr)
   if (!addr || !addr.includes("@")) return false
   const domain = addr.slice(addr.lastIndexOf("@") + 1)
-  for (const entry of allowlist) {
-    if (entry.startsWith("@")) {
-      const target = entry.slice(1)
+  for (const entry of list) {
+    const e = entry.trim().toLowerCase()
+    if (e.startsWith("@")) {
+      const target = e.slice(1)
       if (domain === target || domain.endsWith("." + target)) return true
-    } else if (addr === entry) {
+    } else if (addr === e) {
       return true
     }
   }

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   senderMatches,
+  extractAddress,
   textContainsAny,
   shouldClassify,
   type FetchedEmail,
@@ -39,6 +40,25 @@ describe("senderMatches", () => {
   it("is case-insensitive and rejects non-addresses", () => {
     expect(senderMatches("A@X.com", ["a@x.com"])).toBe(true)
     expect(senderMatches("not-an-email", ["a@x.com"])).toBe(false)
+  })
+  it("matches against a 'Display Name <addr>' From header", () => {
+    const from = "Google <no-reply@accounts.google.com>"
+    expect(senderMatches(from, ["no-reply@accounts.google.com"])).toBe(true)
+    expect(senderMatches(from, ["@accounts.google.com"])).toBe(true)
+    expect(senderMatches(from, ["@other.com"])).toBe(false)
+  })
+})
+
+describe("extractAddress", () => {
+  it("pulls the bare address out of a From header", () => {
+    expect(extractAddress("Google <no-reply@accounts.google.com>")).toBe(
+      "no-reply@accounts.google.com"
+    )
+    expect(extractAddress('"vercel[bot]" <notifications@github.com>')).toBe(
+      "notifications@github.com"
+    )
+    expect(extractAddress("a@x.com")).toBe("a@x.com")
+    expect(extractAddress("A@X.com")).toBe("a@x.com")
   })
 })
 
