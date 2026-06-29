@@ -1,5 +1,8 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent } from "@testing-library/react"
+
+// DigestItemCard renders MuteButton, which calls useRouter — stub the app router.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 
 import { DashboardTabs } from "@/components/DashboardTabs"
 import type { Classification, Digest } from "@/lib/types"

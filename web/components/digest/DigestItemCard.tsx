@@ -3,6 +3,8 @@
 import type { DigestItem } from "@/lib/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { MuteButton } from "@/components/MuteButton"
+import { extractAddress } from "@/lib/filter"
 
 function formatLocalTime(iso: string): string {
   return new Date(iso).toLocaleString()
@@ -49,6 +51,9 @@ export function DigestItemCard({ item }: { item: DigestItem }) {
         >
           {formatLocalTime(item.date)}
         </time>
+        <div className="flex justify-end">
+          <MuteButton sender={extractAddress(item.from_addr)} />
+        </div>
       </CardContent>
     </Card>
   )
