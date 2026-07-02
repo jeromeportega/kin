@@ -4,7 +4,11 @@ import type { DigestItem } from "@/lib/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { MuteButton } from "@/components/MuteButton"
+import { buttonVariants } from "@/components/ui/button"
 import { extractAddress } from "@/lib/filter"
+import { gmailSearchUrl, gmailComposeUrl } from "@/lib/gmailLinks"
+
+const linkClass = buttonVariants({ variant: "ghost", size: "sm" }) + " h-7 text-xs text-muted-foreground"
 
 function formatLocalTime(iso: string): string {
   return new Date(iso).toLocaleString()
@@ -51,7 +55,23 @@ export function DigestItemCard({ item }: { item: DigestItem }) {
         >
           {formatLocalTime(item.date)}
         </time>
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-end gap-1">
+          <a
+            href={gmailSearchUrl(item.message_id)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={linkClass}
+          >
+            Open in Gmail
+          </a>
+          <a
+            href={gmailComposeUrl({ to: extractAddress(item.from_addr), subject: item.subject })}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={linkClass}
+          >
+            Reply
+          </a>
           <MuteButton sender={extractAddress(item.from_addr)} />
         </div>
       </CardContent>
