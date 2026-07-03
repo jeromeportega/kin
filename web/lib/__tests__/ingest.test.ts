@@ -53,6 +53,7 @@ const RESULT = {
   summary: "s",
   action_items: [],
   dates: [],
+  links: [],
   confidence: 0.9,
 }
 
@@ -76,6 +77,24 @@ describe("runIngest", () => {
     expect(r).toEqual({ fetched: 1, filtered: 1, classified: 1, reused: 0, errors: 0 })
     expect(h.classify).toHaveBeenCalledOnce()
     expect(h.insertClassification).toHaveBeenCalledOnce()
+  })
+
+  it("resolves the model's chosen link index to the exact URL", async () => {
+    h.fetchRecent.mockResolvedValueOnce([
+      email({ links: ["https://calendly.com/x", "https://acme.com/unsub"] }),
+    ])
+    h.classify.mockResolvedValueOnce({ ...RESULT, links: [{ label: "Schedule", index: 1 }] })
+    await runIngest("u")
+    expect(h.insertClassification.mock.calls[0][0].links).toEqual([
+      { label: "Schedule", url: "https://calendly.com/x" },
+    ])
+  })
+
+  it("drops a link index that doesn't resolve to a URL", async () => {
+    h.fetchRecent.mockResolvedValueOnce([email({ links: ["https://a.com"] })])
+    h.classify.mockResolvedValueOnce({ ...RESULT, links: [{ label: "X", index: 9 }] })
+    await runIngest("u")
+    expect(h.insertClassification.mock.calls[0][0].links).toEqual([])
   })
 
   it("filters out a non-allowlisted email", async () => {

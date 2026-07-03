@@ -65,6 +65,6 @@ describe("classify", () => {
 
   it("exposes the model + prompt_version matching the Python pipeline", () => {
     expect(MODEL).toBe("claude-sonnet-4-6")
-    expect(PROMPT_VERSION).toBe("b4e9c57d4d9a")
+    expect(PROMPT_VERSION).toBe("51ad4424e7a1")
   })
 })

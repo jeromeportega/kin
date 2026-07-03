@@ -39,6 +39,14 @@ If an email touches multiple topics, pick the category that matches its *primary
   - If the email gives a weekday + month/day but no year, assume the current or upcoming year. Empty list if no relevant date exists.
 - \`confidence\` is your honest 0.0–1.0 estimate that this classification is correct.
 
+# Links
+
+Links in the email are marked inline with a bracketed number — \`[1]\`, \`[2]\`, and so on. Identify the single primary call-to-action (schedule a time, pay, view/track an order, log in to read a portal message, RSVP, confirm/verify) and return it in \`links\` as one entry: a short imperative \`label\` (2–4 words, e.g. "Schedule interview", "Pay bill", "View order", "Log in to read") and \`index\` — the bracket number of that link. **Do not write out URLs; reference a link only by its bracket number.**
+
+- Include at most one link in normal cases; add a second only when there are genuinely two distinct primary actions.
+- SKIP navigation, marketing, and boilerplate links: unsubscribe, manage preferences, privacy/terms, "visit our store", "shop products", browse/category pages, contact/support/FAQ, app-store badges, and social media (Instagram, Facebook, X/Twitter, LinkedIn).
+- If there is no clear action link, return an empty list — marketing and pure-FYI emails usually have none.
+
 # Email
 
 ---

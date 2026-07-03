@@ -19,11 +19,16 @@ import sys
 from pathlib import Path
 
 from app.classify_email import MODEL, classify
+from app.links import render_with_links, resolve_link_indices
 from app.schemas.email import EmailClassification
 
 EVAL_BASE = Path(__file__).parent.parent / "data" / "eval"
-SCORED_FIELDS = ("category", "priority", "action_required", "dates")
+SCORED_FIELDS = ("category", "priority", "action_required", "dates", "links")
 DEFAULT_SETS = ("cases", "real")
+
+
+def _norm_url(u: str) -> str:
+    return u.strip().rstrip("/")
 
 
 def load_set(set_name: str) -> list[tuple[str, str, dict]]:
@@ -41,7 +46,7 @@ def load_set(set_name: str) -> list[tuple[str, str, dict]]:
     return cases
 
 
-def score(expected: dict, actual: EmailClassification) -> dict[str, bool]:
+def score(expected: dict, actual: EmailClassification, urls: list[str]) -> dict[str, bool]:
     actual_dump = actual.model_dump(mode="json")
     results = {}
     for field in SCORED_FIELDS:
@@ -49,6 +54,13 @@ def score(expected: dict, actual: EmailClassification) -> dict[str, bool]:
             continue
         if field == "dates":
             results[field] = set(expected[field]) == set(actual_dump[field])
+        elif field == "links":
+            # Resolve the model's chosen marker indices to their real URLs, then
+            # compare as a set — enforces recall (found the CTA) AND selectivity
+            # (didn't drag in footer/nav/social links). Labels aren't scored.
+            got = {_norm_url(u) for u in resolve_link_indices(actual.links, urls)}
+            want = {_norm_url(u) for u in expected["links"]}
+            results[field] = got == want
         else:
             results[field] = expected[field] == actual_dump[field]
     return results
@@ -56,11 +68,11 @@ def score(expected: dict, actual: EmailClassification) -> dict[str, bool]:
 
 def report_set(
     set_name: str,
-    results: list[tuple[str, EmailClassification, dict, dict[str, bool]]],
+    results: list[tuple[str, EmailClassification, list[str], dict, dict[str, bool]]],
 ) -> dict[str, list[int]]:
     print(f"\n=== set: {set_name} ({len(results)} cases) ===")
     totals: dict[str, list[int]] = {f: [0, 0] for f in SCORED_FIELDS}
-    for case_id, actual, expected, case_results in results:
+    for case_id, actual, urls, expected, case_results in results:
         marks = []
         for field, passed in case_results.items():
             totals[field][1] += 1
@@ -68,7 +80,11 @@ def report_set(
             if passed:
                 marks.append(f"{field}=PASS")
             else:
-                got = getattr(actual, field)
+                got = (
+                    resolve_link_indices(actual.links, urls)
+                    if field == "links"
+                    else getattr(actual, field)
+                )
                 want = expected[field]
                 marks.append(f"{field}=FAIL(got {got!r}, want {want!r})")
         print(f"  {case_id}: {' | '.join(marks)}")
@@ -105,8 +121,9 @@ def main() -> int:
             continue
         results = []
         for case_id, email_text, expected in cases:
-            actual = classify(email_text, model=args.model)
-            results.append((case_id, actual, expected, score(expected, actual)))
+            annotated, urls = render_with_links(email_text)
+            actual = classify(annotated, model=args.model)
+            results.append((case_id, actual, urls, expected, score(expected, actual, urls)))
         totals = report_set(set_name, results)
         any_run = True
         for f, (p, t) in totals.items():

@@ -32,6 +32,7 @@ const result = {
   summary: "s",
   action_items: ["pay"],
   dates: ["2026-06-01"],
+  links: [],
   confidence: 0.9,
 }
 
@@ -82,6 +83,7 @@ describe("insertClassification", () => {
       model: "m",
       promptVersion: "v",
       result,
+      links: [{ label: "Pay", url: "https://x.com/pay" }],
       truncated: false,
       now: "t",
     })
@@ -90,6 +92,7 @@ describe("insertClassification", () => {
     expect(a.args).toContain("finance")
     expect(a.args).toContain(1) // action_required true → 1
     expect(a.args).toContain('["pay"]') // action_items JSON
+    expect(a.args).toContain('[{"label":"Pay","url":"https://x.com/pay"}]') // links JSON
   })
 })
 

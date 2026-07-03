@@ -2,6 +2,7 @@ import "server-only"
 import { dbClient } from "./db"
 import type { FetchedEmail } from "./filter"
 import type { EmailClassification } from "./classify"
+import type { ResolvedLink } from "./types"
 
 // TS port of the write half of app/db.py (the reads are in lib/api.ts). All run
 // against the same libSQL DB via dbClient — Turso in prod, the local SQLite file
@@ -61,6 +62,7 @@ export async function findClassification(opts: {
     summary: String(row.summary),
     action_items: JSON.parse(String(row.action_items)),
     dates: JSON.parse(String(row.dates)),
+    links: [], // unused on cache hits (ingest only checks truthiness)
     confidence: Number(row.confidence),
   } as EmailClassification
 }
@@ -71,16 +73,17 @@ export async function insertClassification(opts: {
   model: string
   promptVersion: string
   result: EmailClassification
+  links: ResolvedLink[]
   truncated: boolean
   now: string
 }): Promise<number> {
-  const { emailId, runId, model, promptVersion, result, truncated, now } = opts
+  const { emailId, runId, model, promptVersion, result, links, truncated, now } = opts
   const rs = await dbClient().execute({
     sql: `INSERT INTO classifications (
             email_id, run_id, model, prompt_version,
             category, priority, action_required, summary,
-            action_items, dates, confidence, truncated, error, classified_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+            action_items, dates, links, confidence, truncated, error, classified_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
     args: [
       emailId,
       runId,
@@ -92,6 +95,7 @@ export async function insertClassification(opts: {
       result.summary,
       JSON.stringify(result.action_items),
       JSON.stringify(result.dates),
+      JSON.stringify(links),
       result.confidence,
       truncated ? 1 : 0,
       now,
@@ -114,8 +118,8 @@ export async function insertClassificationError(opts: {
     sql: `INSERT INTO classifications (
             email_id, run_id, model, prompt_version,
             category, priority, action_required, summary,
-            action_items, dates, confidence, truncated, error, classified_at
-          ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?)`,
+            action_items, dates, links, confidence, truncated, error, classified_at
+          ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?)`,
     args: [emailId, runId, model, promptVersion, truncated ? 1 : 0, error, now],
   })
   return Number(rs.lastInsertRowid)

@@ -8,8 +8,11 @@ export interface FetchedEmail {
   subject: string
   /** ISO 8601 with offset (…+00:00), matching the stored format. */
   date: string
+  /** Body with links replaced by [n] markers (see gmail.ts). */
   text_body: string
   truncated: boolean
+  /** URLs by 1-based [n] marker index in text_body; the classifier picks an index. */
+  links?: string[]
 }
 
 export interface FilterConfig {

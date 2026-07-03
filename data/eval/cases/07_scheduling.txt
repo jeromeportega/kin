@@ -1,0 +1,24 @@
+From: talent@acmecorp.com
+Subject: Next steps — schedule your interview with Acme
+Date: 2026-07-01T09:00:00+00:00
+
+Hi Parent,
+
+Thanks for applying to the Staff Engineer role at Acme. We'd love to move forward
+with a 45-minute technical interview.
+
+Please pick a time that works for you here:
+
+Schedule your interview ( https://calendly.com/acme-talent/staff-eng-interview )
+
+If none of those times work, just reply to this email and we'll find another slot.
+
+Looking forward to speaking with you!
+
+Best,
+The Acme Talent Team
+
+--
+Unsubscribe ( https://acmecorp.com/unsubscribe?u=123 )
+Acme Corp, 100 Market St, San Francisco, CA
+Follow us on LinkedIn ( https://www.linkedin.com/company/acme )

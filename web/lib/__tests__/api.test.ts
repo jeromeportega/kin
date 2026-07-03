@@ -40,6 +40,7 @@ function digest(itemCount = 1): Digest {
       summary: "A test email",
       action_items: ["Reply"],
       dates: [],
+      links: [],
       confidence: 0.9,
       model: "m",
       prompt_version: "v1",
@@ -88,6 +89,7 @@ describe("fetchClassifications", () => {
     summary: "s",
     action_items: "[]",
     dates: '["2026-01-02"]',
+    links: '[{"label":"View","url":"https://x.com"}]',
     confidence: 0.9,
     classified_at: "2026-01-01T00:00:00+00:00",
     email_id: 42,
@@ -107,6 +109,7 @@ describe("fetchClassifications", () => {
     expect(r[0].action_required).toBe(true)
     expect(r[0].action_items).toEqual([])
     expect(r[0].dates).toEqual(["2026-01-02"])
+    expect(r[0].links).toEqual([{ label: "View", url: "https://x.com" }])
     expect(r[0].uid).toBeNull()
   })
 

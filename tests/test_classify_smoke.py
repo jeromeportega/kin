@@ -19,6 +19,7 @@ def test_schema_fields_are_stable():
         "summary",
         "action_items",
         "dates",
+        "links",
         "confidence",
     }
     assert {c.value for c in Category} == {
