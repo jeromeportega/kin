@@ -2,7 +2,40 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 
 vi.mock("server-only", () => ({}))
 
-import { mintAccessToken, ReauthRequired, stripHtml, decodeB64Url, fetchRecent } from "@/lib/gmail"
+import {
+  mintAccessToken,
+  ReauthRequired,
+  stripHtml,
+  decodeB64Url,
+  fetchRecent,
+  renderBodyWithLinks,
+} from "@/lib/gmail"
+
+describe("renderBodyWithLinks", () => {
+  it("replaces plain-text 'label ( url )' links with [n] markers + URL list", () => {
+    const [body, urls] = renderBodyWithLinks(
+      "Schedule your interview ( https://calendly.com/x )\nUnsubscribe ( https://acme.com/u )",
+      ""
+    )
+    expect(body).toBe("Schedule your interview [1]\nUnsubscribe [2]")
+    expect(urls).toEqual(["https://calendly.com/x", "https://acme.com/u"])
+  })
+
+  it("falls back to <a href> extraction for HTML-only bodies", () => {
+    const [body, urls] = renderBodyWithLinks(
+      "",
+      '<p>Pay now: <a href="https://bank.com/pay">Pay bill</a></p>'
+    )
+    expect(body).toContain("Pay bill [1]")
+    expect(urls).toEqual(["https://bank.com/pay"])
+  })
+
+  it("returns no links when there are none", () => {
+    const [body, urls] = renderBodyWithLinks("Just a note, nothing to click.", "")
+    expect(body).toBe("Just a note, nothing to click.")
+    expect(urls).toEqual([])
+  })
+})
 
 beforeEach(() => vi.stubGlobal("fetch", vi.fn()))
 

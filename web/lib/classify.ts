@@ -26,6 +26,14 @@ export const CATEGORIES = [
 ] as const
 export const PRIORITIES = ["low", "medium", "high"] as const
 
+// The model returns the marker INDEX of the chosen link (never the URL — it
+// can't reliably transcribe long tracking URLs; the eval proved this). The
+// pipeline resolves the index to the exact URL from the email's link list.
+export const LinkSchema = z.object({
+  label: z.string(),
+  index: z.number().int(),
+})
+
 export const EmailClassificationSchema = z.object({
   category: z.enum(CATEGORIES),
   priority: z.enum(PRIORITIES),
@@ -33,6 +41,7 @@ export const EmailClassificationSchema = z.object({
   summary: z.string(),
   action_items: z.array(z.string()),
   dates: z.array(z.string()),
+  links: z.array(LinkSchema),
   confidence: z.number().min(0).max(1),
 })
 export type EmailClassification = z.infer<typeof EmailClassificationSchema>

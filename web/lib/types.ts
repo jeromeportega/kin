@@ -1,3 +1,8 @@
+export interface ResolvedLink {
+  label: string
+  url: string
+}
+
 export interface DigestItem {
   classification_id: number
   message_id: string
@@ -11,6 +16,7 @@ export interface DigestItem {
   summary: string
   action_items: string[]
   dates: string[]
+  links: ResolvedLink[]
   confidence: number
   model: string
   prompt_version: string
@@ -44,6 +50,7 @@ export interface Classification {
   summary: string
   action_items: string[]
   dates: string[]
+  links: ResolvedLink[]
   confidence: number
   classified_at: string
   email_id: number

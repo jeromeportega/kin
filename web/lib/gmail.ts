@@ -71,6 +71,44 @@ export function stripHtml(html: string): string {
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
 }
 
+// Parse the plain-text alternative's "label ( url )" form (what most senders emit,
+// and what the eval cases use) into [n] markers + the URL list. Mirrors
+// app/links.py render_with_links so the classifier sees the same shape in eval and
+// in production. The classifier returns a marker index; we resolve it to the URL.
+function markPlainLinks(text: string): [string, string[]] {
+  const urls: string[] = []
+  const marked = text.replace(/\(\s*(https?:\/\/[^\s)]+)\s*\)/g, (_m, url: string) => {
+    urls.push(url)
+    return `[${urls.length}]`
+  })
+  return [marked, urls]
+}
+
+// Fallback for HTML-only emails: pull <a href> links into "label [n]" markers,
+// then strip the remaining tags.
+function markHtmlLinks(html: string): [string, string[]] {
+  const urls: string[] = []
+  const withMarkers = html.replace(
+    /<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+    (_m, url: string, inner: string) => {
+      const label = inner
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+      urls.push(url)
+      return ` ${label} [${urls.length}] `
+    }
+  )
+  return [stripHtml(withMarkers), urls]
+}
+
+/** Body text with [n] link markers + the URLs for those markers, by index. */
+export function renderBodyWithLinks(plain: string, html: string): [string, string[]] {
+  if (plain) return markPlainLinks(plain)
+  if (html) return markHtmlLinks(html)
+  return ["", []]
+}
+
 function extractParts(payload: GmailPayload): [string, string] {
   const mime = payload.mimeType ?? ""
   if (mime === "text/plain") return [payload.body?.data ? decodeB64Url(payload.body.data) : "", ""]
@@ -109,7 +147,7 @@ function toFetched(msg: GmailMessage): FetchedEmail {
   const payload = msg.payload ?? {}
   const headers = payload.headers ?? []
   const [plain, html] = extractParts(payload)
-  const rawBody = plain || stripHtml(html)
+  const [rawBody, links] = renderBodyWithLinks(plain, html)
   const truncated = rawBody.length > MAX_BODY_CHARS
   const textBody = truncated ? rawBody.slice(0, MAX_BODY_CHARS) : rawBody
 
@@ -124,6 +162,7 @@ function toFetched(msg: GmailMessage): FetchedEmail {
     date: parseDateIso(header(headers, "Date"), msg.internalDate ?? ""),
     text_body: textBody,
     truncated,
+    links,
   }
 }
 

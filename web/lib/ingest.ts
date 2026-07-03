@@ -3,6 +3,7 @@ import { dbClient } from "./db"
 import { readRefreshToken } from "./tokenStore"
 import { mintAccessToken, fetchRecent, ReauthRequired } from "./gmail"
 import { shouldClassify, type FetchedEmail, type FilterConfig } from "./filter"
+import type { ResolvedLink } from "./types"
 import { classify, MODEL, PROMPT_VERSION } from "./classify"
 import { upsertEmail, findClassification, insertClassification } from "./writes"
 import { runDigest } from "./digest"
@@ -108,6 +109,13 @@ export async function runIngest(
       continue
     }
 
+    // Resolve the model's chosen link marker indices to exact URLs (the model
+    // never types URLs — see classify.ts / the eval).
+    const urls = msg.links ?? []
+    const resolvedLinks: ResolvedLink[] = result.links
+      .map((l) => ({ label: l.label, url: urls[l.index - 1] }))
+      .filter((l): l is ResolvedLink => Boolean(l.url))
+
     try {
       await insertClassification({
         emailId,
@@ -115,6 +123,7 @@ export async function runIngest(
         model: MODEL,
         promptVersion: PROMPT_VERSION,
         result,
+        links: resolvedLinks,
         truncated: msg.truncated,
         now: nowIso(),
       })
