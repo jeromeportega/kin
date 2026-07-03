@@ -50,6 +50,7 @@ CREATE TABLE classifications (
   action_items TEXT,
   dates TEXT,
   links TEXT,
+  events TEXT,
   confidence REAL,
   truncated INTEGER NOT NULL CHECK (truncated IN (0,1)),
   error TEXT,

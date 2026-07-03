@@ -23,12 +23,16 @@ from app.links import render_with_links, resolve_link_indices
 from app.schemas.email import EmailClassification
 
 EVAL_BASE = Path(__file__).parent.parent / "data" / "eval"
-SCORED_FIELDS = ("category", "priority", "action_required", "dates", "links")
+SCORED_FIELDS = ("category", "priority", "action_required", "dates", "links", "events")
 DEFAULT_SETS = ("cases", "real")
 
 
 def _norm_url(u: str) -> str:
     return u.strip().rstrip("/")
+
+
+def _date_part(s: str) -> str:
+    return s[:10]  # YYYY-MM-DD portion of an ISO date/datetime
 
 
 def load_set(set_name: str) -> list[tuple[str, str, dict]]:
@@ -61,6 +65,14 @@ def score(expected: dict, actual: EmailClassification, urls: list[str]) -> dict[
             got = {_norm_url(u) for u in resolve_link_indices(actual.links, urls)}
             want = {_norm_url(u) for u in expected["links"]}
             results[field] = got == want
+        elif field == "events":
+            # Compare the event start DATES (robust to time-format wobble) and
+            # require each event to have a non-empty title. expected["events"] is
+            # a list of expected start-date strings.
+            got = {_date_part(e["start"]) for e in actual_dump["events"]}
+            want = {_date_part(d) for d in expected["events"]}
+            titles_ok = all(e.get("title") for e in actual_dump["events"])
+            results[field] = got == want and titles_ok
         else:
             results[field] = expected[field] == actual_dump[field]
     return results

@@ -3,6 +3,12 @@ export interface ResolvedLink {
   url: string
 }
 
+export interface CalendarEvent {
+  title: string
+  start: string
+  end: string | null
+}
+
 export interface DigestItem {
   classification_id: number
   message_id: string
@@ -17,6 +23,7 @@ export interface DigestItem {
   action_items: string[]
   dates: string[]
   links: ResolvedLink[]
+  events: CalendarEvent[]
   confidence: number
   model: string
   prompt_version: string
@@ -51,6 +58,7 @@ export interface Classification {
   action_items: string[]
   dates: string[]
   links: ResolvedLink[]
+  events: CalendarEvent[]
   confidence: number
   classified_at: string
   email_id: number

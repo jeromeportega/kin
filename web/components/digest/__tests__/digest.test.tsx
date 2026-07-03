@@ -19,6 +19,7 @@ function makeItem(overrides: Partial<DigestItem> = {}): DigestItem {
     action_items: ["Approve budget", "Forward to CFO"],
     dates: ["March 20", "End of quarter"],
     links: [],
+    events: [],
     confidence: 0.95,
     model: "gpt-4",
     prompt_version: "v1",

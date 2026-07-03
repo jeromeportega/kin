@@ -64,6 +64,7 @@ export function buildDigest(
       action_items: r.action_items,
       dates: r.dates,
       links: r.links,
+      events: r.events,
       confidence: r.confidence,
       model: r.model,
       prompt_version: r.prompt_version,

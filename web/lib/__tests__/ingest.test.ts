@@ -54,6 +54,7 @@ const RESULT = {
   action_items: [],
   dates: [],
   links: [],
+  events: [],
   confidence: 0.9,
 }
 
@@ -95,6 +96,14 @@ describe("runIngest", () => {
     h.classify.mockResolvedValueOnce({ ...RESULT, links: [{ label: "X", index: 9 }] })
     await runIngest("u")
     expect(h.insertClassification.mock.calls[0][0].links).toEqual([])
+  })
+
+  it("passes extracted calendar events through to persistence", async () => {
+    h.fetchRecent.mockResolvedValueOnce([email()])
+    const events = [{ title: "Dentist", start: "2026-07-10T14:00:00+00:00", end: null }]
+    h.classify.mockResolvedValueOnce({ ...RESULT, events })
+    await runIngest("u")
+    expect(h.insertClassification.mock.calls[0][0].result.events).toEqual(events)
   })
 
   it("filters out a non-allowlisted email", async () => {

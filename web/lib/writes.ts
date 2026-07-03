@@ -63,6 +63,7 @@ export async function findClassification(opts: {
     action_items: JSON.parse(String(row.action_items)),
     dates: JSON.parse(String(row.dates)),
     links: [], // unused on cache hits (ingest only checks truthiness)
+    events: [],
     confidence: Number(row.confidence),
   } as EmailClassification
 }
@@ -82,8 +83,8 @@ export async function insertClassification(opts: {
     sql: `INSERT INTO classifications (
             email_id, run_id, model, prompt_version,
             category, priority, action_required, summary,
-            action_items, dates, links, confidence, truncated, error, classified_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+            action_items, dates, links, events, confidence, truncated, error, classified_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
     args: [
       emailId,
       runId,
@@ -96,6 +97,7 @@ export async function insertClassification(opts: {
       JSON.stringify(result.action_items),
       JSON.stringify(result.dates),
       JSON.stringify(links),
+      JSON.stringify(result.events),
       result.confidence,
       truncated ? 1 : 0,
       now,
@@ -118,8 +120,8 @@ export async function insertClassificationError(opts: {
     sql: `INSERT INTO classifications (
             email_id, run_id, model, prompt_version,
             category, priority, action_required, summary,
-            action_items, dates, links, confidence, truncated, error, classified_at
-          ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?)`,
+            action_items, dates, links, events, confidence, truncated, error, classified_at
+          ) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?)`,
     args: [emailId, runId, model, promptVersion, truncated ? 1 : 0, error, now],
   })
   return Number(rs.lastInsertRowid)

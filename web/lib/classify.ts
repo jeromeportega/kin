@@ -34,6 +34,14 @@ export const LinkSchema = z.object({
   index: z.number().int(),
 })
 
+// Calendar-worthy events the model extracts directly (short structured data — no
+// transcription risk, so unlike links these carry their own values).
+export const EventSchema = z.object({
+  title: z.string(),
+  start: z.string(),
+  end: z.string().nullable(),
+})
+
 export const EmailClassificationSchema = z.object({
   category: z.enum(CATEGORIES),
   priority: z.enum(PRIORITIES),
@@ -42,6 +50,7 @@ export const EmailClassificationSchema = z.object({
   action_items: z.array(z.string()),
   dates: z.array(z.string()),
   links: z.array(LinkSchema),
+  events: z.array(EventSchema),
   confidence: z.number().min(0).max(1),
 })
 export type EmailClassification = z.infer<typeof EmailClassificationSchema>

@@ -33,6 +33,7 @@ const result = {
   action_items: ["pay"],
   dates: ["2026-06-01"],
   links: [],
+  events: [],
   confidence: 0.9,
 }
 

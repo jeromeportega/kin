@@ -21,6 +21,7 @@ const cls = (over: Partial<Classification> = {}): Classification => ({
   action_items: [],
   dates: [],
   links: [],
+  events: [],
   confidence: 0.9,
   classified_at: "2026-01-01T00:00:00+00:00",
   email_id: 1,
