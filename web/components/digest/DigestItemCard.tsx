@@ -9,6 +9,7 @@ import { extractAddress } from "@/lib/filter"
 import { gmailSearchUrl, gmailComposeUrl } from "@/lib/gmailLinks"
 
 const linkClass = buttonVariants({ variant: "ghost", size: "sm" }) + " h-7 text-xs text-muted-foreground"
+const ctaClass = buttonVariants({ variant: "default", size: "sm" }) + " h-8"
 
 function formatLocalTime(iso: string): string {
   return new Date(iso).toLocaleString()
@@ -35,6 +36,21 @@ export function DigestItemCard({ item }: { item: DigestItem }) {
       </CardHeader>
       <CardContent className="space-y-2">
         <p className="text-sm">{item.summary}</p>
+        {item.links.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {item.links.map((link, i) => (
+              <a
+                key={i}
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={ctaClass}
+              >
+                {link.label} ↗
+              </a>
+            ))}
+          </div>
+        )}
         {item.action_items.length > 0 && (
           <ul className="list-disc pl-4 text-sm">
             {item.action_items.map((action, i) => (

@@ -149,6 +149,19 @@ describe("DigestView — item detail", () => {
     expect(screen.getByText("Update the tracker")).toBeInTheDocument()
   })
 
+  it("renders resolved action links as buttons", () => {
+    const item = makeItem({
+      classification_id: 12,
+      priority: "high",
+      category: "work",
+      links: [{ label: "Schedule interview", url: "https://calendly.com/x" }],
+    })
+    render(<DigestView digest={makeDigest({ items: [item], classified_count: 1, actionable_count: 1, informational_count: 0 })} />)
+
+    const link = screen.getByRole("link", { name: /Schedule interview/i })
+    expect(link).toHaveAttribute("href", "https://calendly.com/x")
+  })
+
   it("shows extracted dates for each item", () => {
     const item = makeItem({
       classification_id: 11,
