@@ -20,6 +20,7 @@ def test_schema_fields_are_stable():
         "action_items",
         "dates",
         "links",
+        "events",
         "confidence",
     }
     assert {c.value for c in Category} == {

@@ -17,6 +17,6 @@ describe("classifyPrompt", () => {
 
   it("hashes to the same prompt_version as the Python pipeline", () => {
     const version = createHash("sha256").update(CLASSIFY_PROMPT).digest("hex").slice(0, 12)
-    expect(version).toBe("51ad4424e7a1")
+    expect(version).toBe("7c1d3d3b41bc")
   })
 })

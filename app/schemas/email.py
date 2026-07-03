@@ -26,6 +26,12 @@ class Link(BaseModel):
     # resolved to the exact URL after classification (the model never types URLs)
 
 
+class Event(BaseModel):
+    title: str          # short event title, e.g. "Dentist appointment"
+    start: str          # ISO 8601 date or datetime (with tz if a time is given)
+    end: str | None = None  # ISO 8601, when an end is stated
+
+
 class EmailClassification(BaseModel):
     category: Category
     priority: Priority
@@ -34,4 +40,5 @@ class EmailClassification(BaseModel):
     action_items: List[str] = Field(default_factory=list)
     dates: List[str] = Field(default_factory=list)
     links: List[Link] = Field(default_factory=list)
+    events: List[Event] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)

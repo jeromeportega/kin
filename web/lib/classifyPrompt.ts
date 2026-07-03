@@ -47,6 +47,14 @@ Links in the email are marked inline with a bracketed number — \`[1]\`, \`[2]\
 - SKIP navigation, marketing, and boilerplate links: unsubscribe, manage preferences, privacy/terms, "visit our store", "shop products", browse/category pages, contact/support/FAQ, app-store badges, and social media (Instagram, Facebook, X/Twitter, LinkedIn).
 - If there is no clear action link, return an empty list — marketing and pure-FYI emails usually have none.
 
+# Events
+
+\`events\` extracts calendar-worthy items — something the recipient should put on their calendar. Each event has a short \`title\` (e.g. "Dentist appointment", "Property tax due"), a \`start\` in ISO 8601 (date \`YYYY-MM-DD\`, or datetime \`YYYY-MM-DDTHH:MM:SS±HH:MM\` when a specific time is stated), and \`end\` in ISO 8601 if an end time is given, otherwise null.
+
+- Only extract events tied to a specific date the recipient must attend or act on: appointments, service/medical/auto appointments, reservations with a date/time, event invitations, and hard deadlines / payment due dates. Resolve relative dates against the email's \`Date:\` header.
+- Do NOT create events for marketing "sale ends soon", informational past dates, order-placed dates, or vague future references.
+- Empty list if there is no concrete calendar event.
+
 # Email
 
 ---

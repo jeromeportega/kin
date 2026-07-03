@@ -27,6 +27,7 @@ function toItem(c: Classification): DigestItem {
     action_items: c.action_items,
     dates: c.dates,
     links: c.links,
+    events: c.events,
     confidence: c.confidence,
     model: c.model,
     prompt_version: c.prompt_version,

@@ -48,7 +48,7 @@ export async function fetchClassifications(
       SELECT
         c.id AS classification_id, c.model, c.prompt_version, c.category,
         c.priority, c.action_required, c.summary, c.action_items, c.dates,
-        c.links, c.confidence, c.classified_at,
+        c.links, c.events, c.confidence, c.classified_at,
         e.id AS email_id, e.message_id, e.uid, e.folder, e.from_addr,
         e.subject, e.date AS email_date
       FROM classifications c
@@ -77,6 +77,7 @@ export async function fetchClassifications(
     action_items: JSON.parse(String(r.action_items)),
     dates: JSON.parse(String(r.dates)),
     links: r.links == null ? [] : JSON.parse(String(r.links)),
+    events: r.events == null ? [] : JSON.parse(String(r.events)),
     confidence: Number(r.confidence),
     classified_at: String(r.classified_at),
     email_id: Number(r.email_id),
