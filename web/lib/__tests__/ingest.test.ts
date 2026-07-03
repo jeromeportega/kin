@@ -106,6 +106,24 @@ describe("runIngest", () => {
     expect(h.insertClassification.mock.calls[0][0].result.events).toEqual(events)
   })
 
+  it("classifies emails concurrently, not one at a time", async () => {
+    h.fetchRecent.mockResolvedValueOnce(
+      Array.from({ length: 4 }, (_, i) => email({ message_id: `<${i}>` }))
+    )
+    let inFlight = 0
+    let maxInFlight = 0
+    h.classify.mockImplementation(async () => {
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise((r) => setTimeout(r, 10))
+      inFlight -= 1
+      return RESULT
+    })
+    const r = await runIngest("u")
+    expect(r.classified).toBe(4)
+    expect(maxInFlight).toBeGreaterThan(1) // ran in parallel, not sequentially
+  })
+
   it("filters out a non-allowlisted email", async () => {
     h.fetchRecent.mockResolvedValueOnce([email({ from_addr: "b@y.com" })])
     const r = await runIngest("u")

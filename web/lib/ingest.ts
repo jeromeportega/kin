@@ -52,6 +52,36 @@ function googleCreds(): { clientId: string; clientSecret: string } {
   return { clientId, clientSecret }
 }
 
+// How many emails to classify at once. A backfill re-classifies the whole inbox,
+// so sequential classification could exceed the function time limit.
+const CLASSIFY_CONCURRENCY = 6
+
+interface Outcome {
+  filtered: number
+  classified: number
+  reused: number
+  errors: number
+}
+const NO_OUTCOME: Outcome = { filtered: 0, classified: 0, reused: 0, errors: 0 }
+
+/** Map over items with bounded concurrency, preserving input order in results. */
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length)
+  let next = 0
+  async function worker(): Promise<void> {
+    while (next < items.length) {
+      const i = next++
+      results[i] = await fn(items[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()))
+  return results
+}
+
 export interface IngestResult {
   fetched: number
   filtered: number
@@ -76,37 +106,26 @@ export async function runIngest(
 
   const emails = await fetchRecent({ accessToken, hours, limit })
 
-  let fetched = 0
-  let filtered = 0
-  let classified = 0
-  let reused = 0
-  let errors = 0
-
-  for (const msg of emails) {
-    fetched += 1
-    if (!shouldClassify(msg, cfg)) continue
-    filtered += 1
+  // One email's full flow — filter, upsert, dedup, classify, persist. Returns the
+  // counter deltas so the emails can be processed concurrently and aggregated.
+  async function processOne(msg: FetchedEmail): Promise<Outcome> {
+    if (!shouldClassify(msg, cfg)) return { ...NO_OUTCOME }
 
     let emailId: number
     try {
       emailId = await upsertEmail({ userId, folder: "INBOX", msg, now: nowIso() })
     } catch {
-      errors += 1
-      continue
+      return { ...NO_OUTCOME, filtered: 1, errors: 1 }
     }
 
     const cached = await findClassification({ emailId, model: MODEL, promptVersion: PROMPT_VERSION })
-    if (cached) {
-      reused += 1
-      continue
-    }
+    if (cached) return { ...NO_OUTCOME, filtered: 1, reused: 1 }
 
     let result
     try {
       result = await classify(renderForModel(msg))
     } catch {
-      errors += 1
-      continue
+      return { ...NO_OUTCOME, filtered: 1, errors: 1 }
     }
 
     // Resolve the model's chosen link marker indices to exact URLs (the model
@@ -127,10 +146,26 @@ export async function runIngest(
         truncated: msg.truncated,
         now: nowIso(),
       })
-      classified += 1
+      return { ...NO_OUTCOME, filtered: 1, classified: 1 }
     } catch {
-      errors += 1
+      return { ...NO_OUTCOME, filtered: 1, errors: 1 }
     }
+  }
+
+  // Classify concurrently (bounded). A full backfill is dozens of emails; the
+  // old one-at-a-time version could exceed the function time limit.
+  const outcomes = await mapLimit(emails, CLASSIFY_CONCURRENCY, processOne)
+
+  const fetched = emails.length
+  let filtered = 0
+  let classified = 0
+  let reused = 0
+  let errors = 0
+  for (const o of outcomes) {
+    filtered += o.filtered
+    classified += o.classified
+    reused += o.reused
+    errors += o.errors
   }
 
   // Build the digest over the same lookback window as the fetch.
