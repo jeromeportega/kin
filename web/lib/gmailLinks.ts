@@ -1,5 +1,31 @@
-// Deterministic Gmail deep-links — no model involved, so these are validated by
-// unit tests on the URL shape (see gmailLinks.test.ts), not the classifier eval.
+import type { CalendarEvent } from "./types"
+
+// Deterministic Gmail / Google Calendar deep-links — no model involved, so these
+// are validated by unit tests on the URL shape (see gmailLinks.test.ts).
+
+/** Build a Google Calendar "add event" link from an extracted event. */
+export function googleCalendarUrl(event: CalendarEvent): string {
+  const timed = event.start.includes("T")
+  const toMs = (iso: string) => Date.parse(iso.includes("T") ? iso : `${iso}T00:00:00Z`)
+  const startMs = toMs(event.start)
+  // Default duration when no end is given: 1 hour (timed) or 1 day (all-day).
+  // Google treats an all-day end as exclusive, so a stated all-day end gets +1 day.
+  const endMs = event.end
+    ? toMs(event.end) + (timed ? 0 : 86_400_000)
+    : startMs + (timed ? 3_600_000 : 86_400_000)
+
+  const stamp = (ms: number) =>
+    timed
+      ? new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")
+      : new Date(ms).toISOString().slice(0, 10).replace(/-/g, "")
+
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: event.title,
+    dates: `${stamp(startMs)}/${stamp(endMs)}`,
+  })
+  return `https://calendar.google.com/calendar/render?${params.toString()}`
+}
 
 /**
  * Open a specific message in Gmail by its RFC822 Message-ID. Gmail has no public

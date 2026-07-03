@@ -1,5 +1,22 @@
 import { describe, it, expect } from "vitest"
-import { gmailSearchUrl, gmailComposeUrl } from "@/lib/gmailLinks"
+import { gmailSearchUrl, gmailComposeUrl, googleCalendarUrl } from "@/lib/gmailLinks"
+
+describe("googleCalendarUrl", () => {
+  it("builds an all-day event link (end exclusive → +1 day)", () => {
+    const url = googleCalendarUrl({ title: "Property tax due", start: "2026-07-10", end: null })
+    expect(url).toContain("action=TEMPLATE")
+    expect(url).toContain("text=Property+tax+due")
+    expect(url).toContain("dates=20260710%2F20260711")
+  })
+  it("builds a timed event link with a default 1h duration", () => {
+    const url = googleCalendarUrl({
+      title: "Dentist",
+      start: "2026-07-10T14:00:00+00:00",
+      end: null,
+    })
+    expect(url).toContain("dates=20260710T140000Z%2F20260710T150000Z")
+  })
+})
 
 describe("gmailSearchUrl", () => {
   it("strips angle brackets and encodes the rfc822msgid query", () => {
