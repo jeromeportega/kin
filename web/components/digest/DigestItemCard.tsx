@@ -25,6 +25,10 @@ const PRIORITY_VARIANT: Record<
 }
 
 export function DigestItemCard({ item }: { item: DigestItem }) {
+  // Tolerate digests persisted before links/events existed (their json_payload
+  // items lack these keys).
+  const links = item.links ?? []
+  const events = item.events ?? []
   return (
     <Card>
       <CardHeader>
@@ -36,9 +40,9 @@ export function DigestItemCard({ item }: { item: DigestItem }) {
       </CardHeader>
       <CardContent className="space-y-2">
         <p className="text-sm">{item.summary}</p>
-        {item.links.length > 0 && (
+        {links.length > 0 && (
           <div className="flex flex-wrap gap-2">
-            {item.links.map((link, i) => (
+            {links.map((link, i) => (
               <a
                 key={i}
                 href={link.url}
@@ -65,9 +69,9 @@ export function DigestItemCard({ item }: { item: DigestItem }) {
             ))}
           </ul>
         )}
-        {item.events.length > 0 && (
+        {events.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {item.events.map((ev, i) => (
+            {events.map((ev, i) => (
               <a
                 key={i}
                 href={googleCalendarUrl(ev)}

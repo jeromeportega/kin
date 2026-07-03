@@ -176,6 +176,26 @@ describe("DigestView — item detail", () => {
     expect(link.getAttribute("href")).toContain("calendar.google.com")
   })
 
+  it("renders items from older digests that predate links/events", () => {
+    const legacy = { ...makeItem({ classification_id: 14, subject: "Legacy Item" }) } as Record<
+      string,
+      unknown
+    >
+    delete legacy.links
+    delete legacy.events
+    render(
+      <DigestView
+        digest={makeDigest({
+          items: [legacy as unknown as DigestItem],
+          classified_count: 1,
+          actionable_count: 1,
+          informational_count: 0,
+        })}
+      />
+    )
+    expect(screen.getByText("Legacy Item")).toBeInTheDocument()
+  })
+
   it("shows extracted dates for each item", () => {
     const item = makeItem({
       classification_id: 11,
