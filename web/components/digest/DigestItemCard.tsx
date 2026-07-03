@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { MuteButton } from "@/components/MuteButton"
 import { buttonVariants } from "@/components/ui/button"
 import { extractAddress } from "@/lib/filter"
-import { gmailSearchUrl, gmailComposeUrl } from "@/lib/gmailLinks"
+import { gmailSearchUrl, gmailComposeUrl, googleCalendarUrl } from "@/lib/gmailLinks"
 
 const linkClass = buttonVariants({ variant: "ghost", size: "sm" }) + " h-7 text-xs text-muted-foreground"
 const ctaClass = buttonVariants({ variant: "default", size: "sm" }) + " h-8"
@@ -64,6 +64,22 @@ export function DigestItemCard({ item }: { item: DigestItem }) {
               <li key={i}>{date}</li>
             ))}
           </ul>
+        )}
+        {item.events.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {item.events.map((ev, i) => (
+              <a
+                key={i}
+                href={googleCalendarUrl(ev)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={linkClass}
+                title={`Add "${ev.title}" to Google Calendar`}
+              >
+                📅 {ev.title}
+              </a>
+            ))}
+          </div>
         )}
         <time
           className="block text-xs text-muted-foreground"

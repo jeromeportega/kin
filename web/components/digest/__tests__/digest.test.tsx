@@ -163,6 +163,19 @@ describe("DigestView — item detail", () => {
     expect(link).toHaveAttribute("href", "https://calendly.com/x")
   })
 
+  it("renders events as Add-to-calendar links", () => {
+    const item = makeItem({
+      classification_id: 13,
+      priority: "high",
+      category: "work",
+      events: [{ title: "Dentist appointment", start: "2026-07-10", end: null }],
+    })
+    render(<DigestView digest={makeDigest({ items: [item], classified_count: 1, actionable_count: 1, informational_count: 0 })} />)
+
+    const link = screen.getByRole("link", { name: /Dentist appointment/i })
+    expect(link.getAttribute("href")).toContain("calendar.google.com")
+  })
+
   it("shows extracted dates for each item", () => {
     const item = makeItem({
       classification_id: 11,
