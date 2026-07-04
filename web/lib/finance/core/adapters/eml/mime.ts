@@ -7,16 +7,22 @@ const MAX_INPUT_BYTES = 5 * 1024 * 1024; // 5 MB
  * Decode a quoted-printable string per RFC 2045:
  * - Soft line breaks `=\r\n` and `=\n` are removed (line-continuation).
  * - `=XX` hex sequences are decoded to the corresponding byte.
+ * - Consecutive =XX sequences are grouped into a Uint8Array and decoded via
+ *   TextDecoder('utf-8') so multi-byte UTF-8 sequences (e.g. =C3=A9 → é)
+ *   are handled correctly rather than producing per-byte mojibake.
  * - CRLF is normalised to LF.
  */
 export function decodeQuotedPrintable(input: string): string {
-  return input
-    .replace(/=\r\n/g, '')
-    .replace(/=\n/g, '')
-    .replace(/=([0-9A-Fa-f]{2})/g, (_, hex: string) =>
-      String.fromCharCode(parseInt(hex, 16)),
-    )
-    .replace(/\r\n/g, '\n');
+  const stripped = input.replace(/=\r\n/g, '').replace(/=\n/g, '');
+
+  // Group consecutive =XX runs into a Uint8Array and decode as UTF-8 together.
+  const decoded = stripped.replace(/(=([0-9A-Fa-f]{2}))+/g, (match) => {
+    const hexPairs = match.match(/=([0-9A-Fa-f]{2})/g)!;
+    const bytes = new Uint8Array(hexPairs.map((h) => parseInt(h.slice(1), 16)));
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+  });
+
+  return decoded.replace(/\r\n/g, '\n');
 }
 
 /** Decode a base64 body (stripping whitespace first). */
@@ -119,8 +125,11 @@ function decodePart(body: string, encoding: string): string {
  *
  * `messageId` is the Gmail message id from `RawInput.filename` — it is NOT
  * extracted from the email headers (ADR-004 / shared-contract §1).
+ *
+ * `depth` guards against stack exhaustion from deeply nested multipart/* structures;
+ * recursion stops at depth 5 and nested parts beyond that are treated as opaque.
  */
-export function parseMimeMessage(bytes: Uint8Array, messageId: string): ParsedEmailMessage {
+export function parseMimeMessage(bytes: Uint8Array, messageId: string, depth = 0): ParsedEmailMessage {
   const rawBytes = bytes.length > MAX_INPUT_BYTES ? bytes.slice(0, MAX_INPUT_BYTES) : bytes;
   const raw = new TextDecoder('utf-8', { fatal: false }).decode(rawBytes);
 
@@ -143,11 +152,14 @@ export function parseMimeMessage(bytes: Uint8Array, messageId: string): ParsedEm
         const enc = partHeaders['content-transfer-encoding'] ?? '';
         const decoded = decodePart(partBody, enc);
 
-        // Recursively handle multipart/related or multipart/mixed nested inside
+        // Recursively handle multipart/related or multipart/mixed nested inside.
+        // Depth guard prevents stack exhaustion from pathologically nested emails.
         if (/multipart\//i.test(partCt)) {
+          if (depth >= 5) continue;
           const nested = parseMimeMessage(
             new TextEncoder().encode(part),
             messageId,
+            depth + 1,
           );
           if (!html && nested.html) html = nested.html;
           if (!text && nested.text) text = nested.text;
@@ -172,23 +184,52 @@ export function parseMimeMessage(bytes: Uint8Array, messageId: string): ParsedEm
 /**
  * Minimal RFC 2047 encoded-word decoder for Subject / From headers.
  * Handles `=?charset?Q?...?=` (quoted-printable) and `=?charset?B?...?=` (base64).
+ * Uses the declared charset (e.g. ISO-8859-1, Windows-1252) for byte decoding
+ * rather than always assuming UTF-8, preventing mojibake in older emails.
+ * Exported for unit testing.
  */
-function decodeRfc2047(header: string): string {
+export function decodeRfc2047(header: string): string {
   return header.replace(
     /=\?([^?]+)\?([QqBb])\?([^?]*)\?=/g,
-    (_full, _charset: string, encoding: string, text: string) => {
+    (_full, charset: string, encoding: string, encodedText: string) => {
       const enc = encoding.toUpperCase();
+      let bytes: Uint8Array;
+
       if (enc === 'Q') {
-        return decodeQuotedPrintable(text.replace(/_/g, ' '));
-      }
-      if (enc === 'B') {
-        try {
-          return Buffer.from(text, 'base64').toString('utf-8');
-        } catch {
-          return text;
+        // Q encoding: underscores are spaces; =XX are byte values in declared charset
+        const unescaped = encodedText.replace(/_/g, ' ');
+        const byteArr: number[] = [];
+        let i = 0;
+        while (i < unescaped.length) {
+          if (
+            unescaped[i] === '=' &&
+            i + 2 < unescaped.length &&
+            /[0-9A-Fa-f]{2}/.test(unescaped.slice(i + 1, i + 3))
+          ) {
+            byteArr.push(parseInt(unescaped.slice(i + 1, i + 3), 16));
+            i += 3;
+          } else {
+            byteArr.push(unescaped.charCodeAt(i) & 0xff);
+            i++;
+          }
         }
+        bytes = new Uint8Array(byteArr);
+      } else if (enc === 'B') {
+        try {
+          bytes = new Uint8Array(Buffer.from(encodedText, 'base64'));
+        } catch {
+          return encodedText;
+        }
+      } else {
+        return encodedText;
       }
-      return text;
+
+      try {
+        return new TextDecoder(charset.toLowerCase(), { fatal: false }).decode(bytes);
+      } catch {
+        // Unknown charset — fall back to UTF-8
+        return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+      }
     },
   );
 }

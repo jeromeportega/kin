@@ -6,8 +6,20 @@ import type { ParsedEmailMessage, RetailerEmailParser } from '../types';
 /** Cap HTML before regex to guard against ReDoS on malformed input. */
 const MAX_HTML_BYTES = 2 * 1024 * 1024;
 
-const AMAZON_FROM_RE = /\bamazon\.com\b/i;
+/**
+ * Match only the bare email address (not the display name) against amazon.com.
+ * Prevents display-name spoofing ("Amazon.com Order" <phisher@evil.com>) and
+ * subdomain-suffix attacks (noreply@amazon.com.evil.com).
+ */
+const AMAZON_DOMAIN_RE = /^[\w.+\-]+@([\w\-]+\.)?amazon\.com$/i;
 const AMAZON_ORDER_ID_RE = /\b(\d{3}-\d{7}-\d{7})\b/;
+
+/** Extract the bare address-spec from a From header, stripping any display name. */
+function extractFromAddress(from: string): string {
+  const angleMatch = /<([^>]*)>/.exec(from);
+  if (angleMatch?.[1]) return angleMatch[1].trim().toLowerCase();
+  return from.trim().toLowerCase();
+}
 
 const FIELD_SEP = '\x00';
 
@@ -170,7 +182,7 @@ export const amazonEmailParser: RetailerEmailParser = {
     'from:(auto-confirm@amazon.com OR ship-confirm@amazon.com OR returns@amazon.com OR return@amazon.com) subject:(order OR refund OR return OR shipped)',
 
   matches(msg: ParsedEmailMessage): boolean {
-    if (AMAZON_FROM_RE.test(msg.from)) return true;
+    if (AMAZON_DOMAIN_RE.test(extractFromAddress(msg.from))) return true;
     const subjectLower = msg.subject.toLowerCase();
     return (
       subjectLower.includes('amazon') &&

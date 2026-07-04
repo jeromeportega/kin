@@ -336,3 +336,76 @@ describe('emlAdapter — additional edge cases', () => {
     expect(typeof (result as unknown as { then?: unknown }).then).not.toBe('function');
   });
 });
+
+// ---------------------------------------------------------------------------
+// From-header address spoofing defence
+// ---------------------------------------------------------------------------
+
+describe('Amazon parser — From-header address extraction', () => {
+  // Use a neutral subject with no amazon/order/refund keywords so that the
+  // subject fallback path in matches() does NOT fire — this isolates the From check.
+  function fakeEmlInput(from: string, subject = 'Package update from carrier'): RawInput {
+    const raw = [
+      `From: ${from}`,
+      `Subject: ${subject}`,
+      'Content-Type: text/plain; charset=utf-8',
+      '',
+      'Order Date: January 5, 2026',
+      'Order Total: $10.00',
+      'Order #113-1234567-1234567',
+    ].join('\r\n');
+    return { kind: 'eml', filename: 'spoof-test', bytes: new TextEncoder().encode(raw) };
+  }
+
+  it('supports() = true for a bare amazon.com address', () => {
+    expect(emlAdapter.supports(fakeEmlInput('auto-confirm@amazon.com'))).toBe(true);
+  });
+
+  it('supports() = true for a display-name + angle-bracket amazon.com address', () => {
+    expect(emlAdapter.supports(fakeEmlInput('"Amazon.com" <auto-confirm@amazon.com>'))).toBe(true);
+  });
+
+  it('supports() = false for display-name spoofing (amazon.com in name, evil domain in address)', () => {
+    // "Amazon.com Order" <phisher@evil.com> must NOT match when subject is neutral
+    expect(emlAdapter.supports(fakeEmlInput('"Amazon.com Order" <phisher@evil.com>'))).toBe(false);
+  });
+
+  it('supports() = false for subdomain suffix attack (amazon.com.evil.com)', () => {
+    expect(emlAdapter.supports(fakeEmlInput('noreply@amazon.com.evil.com'))).toBe(false);
+  });
+
+  it('supports() = true for a legitimate subdomain (mail.amazon.com)', () => {
+    expect(emlAdapter.supports(fakeEmlInput('noreply@mail.amazon.com'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Parenthesized accounting-format amounts (($X.XX) → negative)
+// ---------------------------------------------------------------------------
+
+describe('Amazon parser — parenthesized accounting amounts', () => {
+  it('parses ($45.00) as -4500 cents (return/refund line)', () => {
+    const html = `
+      <p>Order #113-0000001-0000001</p>
+      <p>Order Date: January 5, 2026</p>
+      <table>
+        <tr><td>Wireless Headphones</td><td>($45.00)</td></tr>
+      </table>
+      <p>Order Total: $0.00</p>
+    `;
+    const raw = [
+      'From: auto-confirm@amazon.com',
+      'Subject: Your Amazon.com refund (#113-0000001-0000001)',
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      html,
+    ].join('\r\n');
+    const input: RawInput = { kind: 'eml', filename: 'paren-test', bytes: new TextEncoder().encode(raw) };
+    const batch = normalizeSync(input);
+    expect(batch.orders).toHaveLength(1);
+    const item = batch.orders[0]!.items.find((i) => i.description === 'Wireless Headphones');
+    expect(item).toBeDefined();
+    expect(item!.amountCents).toBe(-4500);
+    expect(item!.isReturn).toBe(true);
+  });
+});

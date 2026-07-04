@@ -10,7 +10,7 @@ export interface ParsedEmailMessage {
 }
 
 export interface RetailerEmailParser {
-  readonly retailer: 'amazon';
+  readonly retailer: string;
   readonly gmailQuery: string;
   matches(msg: ParsedEmailMessage): boolean;
   /** Throws only on truly malformed input; the adapter caller catches and records ImportError. */
