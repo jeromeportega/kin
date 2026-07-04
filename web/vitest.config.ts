@@ -8,9 +8,9 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
     globals: true,
-    // Live vision-accuracy eval (needs ANTHROPIC_API_KEY, costs money) runs via a
-    // separate command, never in the gate.
-    exclude: [...configDefaults.exclude, "**/*.eval.test.ts"],
+    // Live vision-accuracy eval (needs ANTHROPIC_API_KEY, costs money) and the
+    // Playwright E2E specs run via separate commands, never in the unit gate.
+    exclude: [...configDefaults.exclude, "**/*.eval.test.ts", "e2e/**"],
   },
   resolve: {
     alias: {
