@@ -5,6 +5,9 @@ import { createDb, type FinanceDb } from "./db/client"
 import { households } from "./db/schema"
 import { gatewayFor } from "./core/reconciliation/gateway"
 import { assembleQueue } from "./core/queue/assemble"
+import { reconcile } from "./core/reconcile/engine"
+import { DrizzleReconcileSource } from "./core/reconcile/source"
+import { DrizzleReconcileSink } from "./core/reconcile/sink"
 import type { HouseholdScope } from "./core/scope"
 import type { QueueItem } from "./core/queue/types"
 
@@ -35,4 +38,14 @@ export async function resolveHouseholdScope(userId: string): Promise<HouseholdSc
 export async function fetchQueue(scope: HouseholdScope): Promise<QueueItem[]> {
   const gw = gatewayFor({ RECON_BACKEND: "live" })
   return assembleQueue(scope, gw, db())
+}
+
+/** Reconcile the household's current corpus (bank ↔ orders ↔ receipts) and persist
+ *  the resulting matches. Run after each ingest so newly-arrived data re-links
+ *  against everything already imported. Idempotent: deterministic engine match
+ *  ids + the sink's onConflictDoNothing make re-runs no-ops for existing links. */
+export async function reconcileHousehold(scope: HouseholdScope): Promise<void> {
+  const inputs = await new DrizzleReconcileSource(db()).load(scope.householdId)
+  const ledger = reconcile(inputs)
+  await new DrizzleReconcileSink(db()).persist(scope.householdId, ledger)
 }

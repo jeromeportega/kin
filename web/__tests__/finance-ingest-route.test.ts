@@ -5,12 +5,16 @@ vi.mock("server-only", () => ({}))
 const h = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveHouseholdScope: vi.fn(),
+  reconcileHousehold: vi.fn(),
   importSource: vi.fn(),
   revalidatePath: vi.fn(),
 }))
 vi.mock("next/cache", () => ({ revalidatePath: h.revalidatePath }))
 vi.mock("@/auth", () => ({ auth: h.auth }))
-vi.mock("@/lib/finance/server", () => ({ resolveHouseholdScope: h.resolveHouseholdScope }))
+vi.mock("@/lib/finance/server", () => ({
+  resolveHouseholdScope: h.resolveHouseholdScope,
+  reconcileHousehold: h.reconcileHousehold,
+}))
 vi.mock("@/lib/finance/core/ingest/pipeline", () => ({ importSource: h.importSource }))
 // A chainable drizzle stand-in: no existing account, insert is a no-op.
 vi.mock("@/lib/finance/db/client", () => ({
@@ -31,6 +35,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   h.auth.mockResolvedValue({ user: { email: "user@example.com" } })
   h.resolveHouseholdScope.mockResolvedValue({ householdId: "h1" })
+  h.reconcileHousehold.mockResolvedValue(undefined)
   h.importSource.mockResolvedValue({ transactions: 3, orders: 0, skippedDuplicates: 1, errors: [] })
 })
 
@@ -56,6 +61,8 @@ describe("POST /api/finance/ingest", () => {
     expect(input.kind).toBe("bank")
     expect(ctx.householdId).toBe("h1")
     expect(ctx.accountId).toBeTruthy() // default account created
+    // Reconcile runs after the import so newly-landed rows re-link immediately.
+    expect(h.reconcileHousehold).toHaveBeenCalledWith({ householdId: "h1" })
     expect(h.revalidatePath).toHaveBeenCalledWith("/finance")
   })
 
