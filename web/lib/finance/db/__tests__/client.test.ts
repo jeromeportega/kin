@@ -1,13 +1,11 @@
-import { describe, it, expect, vi } from "vitest"
+import { describe, it, expect } from "vitest"
 
-vi.mock("server-only", () => ({}))
-
-import { createTestFinanceDb } from "@/lib/finance/db/client"
+import { createTestDb } from "@/lib/finance/db/client"
 import { households, transactions, receipts } from "@/lib/finance/db/schema"
 
 describe("finance db foundation", () => {
-  it("createTestFinanceDb applies the full finance schema (tables are queryable)", async () => {
-    const { db, cleanup } = await createTestFinanceDb()
+  it("createTestDb applies the full finance schema (tables are queryable)", async () => {
+    const { db, cleanup } = createTestDb()
     try {
       // No "no such table" — the migrations created them.
       expect(await db.select().from(households)).toEqual([])
@@ -19,7 +17,7 @@ describe("finance db foundation", () => {
   })
 
   it("round-trips a row through drizzle", async () => {
-    const { db, cleanup } = await createTestFinanceDb()
+    const { db, cleanup } = createTestDb()
     try {
       await db.insert(households).values({ id: "h1", name: "Ortega Household" })
       const rows = await db.select().from(households)
