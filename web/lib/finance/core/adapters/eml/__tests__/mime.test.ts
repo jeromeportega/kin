@@ -230,6 +230,56 @@ describe('decodeRfc2047', () => {
 });
 
 // ---------------------------------------------------------------------------
+// parseMimeMessage — charset-aware base64 decoding
+// ---------------------------------------------------------------------------
+
+describe('parseMimeMessage — charset-aware base64 decoding', () => {
+  function encode(text: string): Uint8Array {
+    return new TextEncoder().encode(text);
+  }
+
+  it('decodes a base64 ISO-8859-1 HTML part without mojibake', () => {
+    // "café" in ISO-8859-1 bytes: 0x63 0x61 0x66 0xE9
+    const iso88591Bytes = Buffer.from([0x63, 0x61, 0x66, 0xe9]);
+    const b64 = iso88591Bytes.toString('base64');
+    const raw = [
+      'From: test@example.com',
+      'Subject: Charset Test',
+      'Content-Type: multipart/alternative; boundary="B"',
+      '',
+      '--B',
+      'Content-Type: text/html; charset=iso-8859-1',
+      'Content-Transfer-Encoding: base64',
+      '',
+      b64,
+      '--B--',
+    ].join('\r\n');
+
+    const msg = parseMimeMessage(encode(raw), 'charset-id');
+    expect(msg.html).toBe('café');
+  });
+
+  it('defaults to UTF-8 when no charset declared in Content-Type', () => {
+    const b64 = Buffer.from('hello', 'utf-8').toString('base64');
+    const raw = [
+      'From: test@example.com',
+      'Subject: No Charset',
+      'Content-Type: multipart/alternative; boundary="B"',
+      '',
+      '--B',
+      'Content-Type: text/plain',
+      'Content-Transfer-Encoding: base64',
+      '',
+      b64,
+      '--B--',
+    ].join('\r\n');
+
+    const msg = parseMimeMessage(encode(raw), 'no-charset-id');
+    expect(msg.text).toBe('hello');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // parseMimeMessage — recursion depth guard
 // ---------------------------------------------------------------------------
 

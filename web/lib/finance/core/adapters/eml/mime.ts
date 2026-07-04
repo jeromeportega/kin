@@ -25,10 +25,11 @@ export function decodeQuotedPrintable(input: string): string {
   return decoded.replace(/\r\n/g, '\n');
 }
 
-/** Decode a base64 body (stripping whitespace first). */
-function decodeBase64Part(input: string): string {
+/** Decode a base64 body (stripping whitespace first). Uses the declared charset. */
+function decodeBase64Part(input: string, charset = 'utf-8'): string {
   try {
-    return Buffer.from(input.replace(/\s/g, ''), 'base64').toString('utf-8');
+    const bytes = new Uint8Array(Buffer.from(input.replace(/\s/g, ''), 'base64'));
+    return new TextDecoder(charset, { fatal: false }).decode(bytes);
   } catch {
     return input;
   }
@@ -113,10 +114,15 @@ function trimTrailingEmpty(lines: string[]): void {
   while (lines.length > 0 && lines[lines.length - 1]!.trim() === '') lines.pop();
 }
 
-function decodePart(body: string, encoding: string): string {
+function extractCharset(contentType: string): string {
+  const m = /charset=(?:"([^"]+)"|([^\s;]+))/i.exec(contentType);
+  return m ? (m[1] ?? m[2] ?? 'utf-8') : 'utf-8';
+}
+
+function decodePart(body: string, encoding: string, charset = 'utf-8'): string {
   const enc = encoding.toLowerCase().trim();
   if (enc === 'quoted-printable') return decodeQuotedPrintable(body);
-  if (enc === 'base64') return decodeBase64Part(body);
+  if (enc === 'base64') return decodeBase64Part(body, charset);
   return body;
 }
 
@@ -150,10 +156,14 @@ export function parseMimeMessage(bytes: Uint8Array, messageId: string, depth = 0
         const { headers: partHeaders, body: partBody } = parseHeaderBlock(part);
         const partCt = partHeaders['content-type'] ?? '';
         const enc = partHeaders['content-transfer-encoding'] ?? '';
-        const decoded = decodePart(partBody, enc);
+        const charset = extractCharset(partCt);
+        const decoded = decodePart(partBody, enc, charset);
 
         // Recursively handle multipart/related or multipart/mixed nested inside.
         // Depth guard prevents stack exhaustion from pathologically nested emails.
+        // Known limitation: for nested multipart with non-UTF-8 charsets, the
+        // re-encode via TextEncoder (always UTF-8) locks in the initial lossy
+        // conversion. This is acceptable for the Amazon use-case (UTF-8 only).
         if (/multipart\//i.test(partCt)) {
           if (depth >= 5) continue;
           const nested = parseMimeMessage(
@@ -172,10 +182,12 @@ export function parseMimeMessage(bytes: Uint8Array, messageId: string, depth = 0
     }
   } else if (/text\/html/i.test(contentType)) {
     const enc = headers['content-transfer-encoding'] ?? '';
-    html = decodePart(body, enc);
+    const charset = extractCharset(contentType);
+    html = decodePart(body, enc, charset);
   } else {
     const enc = headers['content-transfer-encoding'] ?? '';
-    text = decodePart(body, enc);
+    const charset = extractCharset(contentType);
+    text = decodePart(body, enc, charset);
   }
 
   return { from, subject, html, text, messageId };

@@ -182,12 +182,7 @@ export const amazonEmailParser: RetailerEmailParser = {
     'from:(auto-confirm@amazon.com OR ship-confirm@amazon.com OR returns@amazon.com OR return@amazon.com) subject:(order OR refund OR return OR shipped)',
 
   matches(msg: ParsedEmailMessage): boolean {
-    if (AMAZON_DOMAIN_RE.test(extractFromAddress(msg.from))) return true;
-    const subjectLower = msg.subject.toLowerCase();
-    return (
-      subjectLower.includes('amazon') &&
-      (subjectLower.includes('order') || subjectLower.includes('refund') || subjectLower.includes('return') || subjectLower.includes('shipped'))
-    );
+    return AMAZON_DOMAIN_RE.test(extractFromAddress(msg.from));
   },
 
   parse(msg: ParsedEmailMessage): NormalizedOrder {

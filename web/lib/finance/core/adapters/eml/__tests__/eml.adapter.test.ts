@@ -377,6 +377,30 @@ describe('Amazon parser — From-header address extraction', () => {
   it('supports() = true for a legitimate subdomain (mail.amazon.com)', () => {
     expect(emlAdapter.supports(fakeEmlInput('noreply@mail.amazon.com'))).toBe(true);
   });
+
+  it('supports() = false for phishing email with Amazon-matching subject but evil sender', () => {
+    // Subject alone must never be sufficient — From address is the sole gate.
+    expect(
+      emlAdapter.supports(
+        fakeEmlInput('"Amazon" <phisher@evil.com>', 'Amazon.com order #113-1234567-1234567 confirmed'),
+      ),
+    ).toBe(false);
+  });
+
+  it('supports() = false when From is evil.com even with order/refund/return/shipped in subject', () => {
+    const subjects = [
+      'Your Amazon order is confirmed',
+      'Amazon.com refund processed',
+      'Your return to Amazon has been received',
+      'Amazon.com: your item has shipped',
+    ];
+    for (const subject of subjects) {
+      expect(
+        emlAdapter.supports(fakeEmlInput('attacker@evil.com', subject)),
+        `should be false for subject: ${subject}`,
+      ).toBe(false);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
