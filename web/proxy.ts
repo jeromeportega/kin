@@ -38,5 +38,5 @@ export function guardDashboard(
 export default auth((req) => guardDashboard(req.auth, req.nextUrl.origin))
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: ["/dashboard/:path*", "/finance/:path*"],
 }
