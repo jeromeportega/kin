@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 import { auth } from "@/auth"
 import { resolveHouseholdScope, fetchQueue } from "@/lib/finance/server"
 import { QueueView } from "@/components/finance/queue/QueueView"
+import { FinanceUpload } from "@/components/finance/FinanceUpload"
 
 export const dynamic = "force-dynamic"
 
@@ -21,6 +22,7 @@ export default async function FinancePage() {
           Amazon exports, and anything the reconcile loop is unsure of lands here.
         </p>
       </div>
+      <FinanceUpload />
       <QueueView items={items} />
     </main>
   )
