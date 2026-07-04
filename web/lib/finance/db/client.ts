@@ -1,4 +1,3 @@
-import "server-only"
 import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -6,28 +5,30 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { createClient, type Client } from "@libsql/client"
 import { drizzle } from "drizzle-orm/libsql"
-import { dbClient } from "@/lib/db"
-import * as schema from "./schema"
 
-// The finance module uses drizzle (ported from clarity), wrapping kin's SHARED
-// libSQL connection — so finance tables live in the same Turso DB (prod) / local
-// SQLite file (dev) as the email tables. Email code keeps using raw dbClient();
-// finance code uses financeDb(). One connection, two idioms, clean boundary.
+// The finance module's drizzle types + test-DB factory (ported from clarity). This
+// file is deliberately free of "server-only" and of any kin runtime import, so the
+// finance core + its tests can import it anywhere. The SHARED runtime connection
+// (Turso/local, same DB as email) lives in ./runtime (financeDb).
 
-export type FinanceDb = ReturnType<typeof drizzle<typeof schema>>
+export type FinanceDb = ReturnType<typeof drizzle>
 
-let _db: FinanceDb | null = null
-
-export function financeDb(): FinanceDb {
-  if (!_db) _db = drizzle(dbClient(), { schema })
-  return _db
+/** Runtime finance DB — resolves kin's SHARED libSQL DB (Turso in prod, the local
+ * kin.sqlite file in dev), so finance tables sit in the same DB as email. A fresh
+ * client per call (clarity's semantics); the web layer holds its own singleton. */
+export function createDb(): FinanceDb {
+  const tursoUrl = process.env.TURSO_DATABASE_URL
+  if (tursoUrl) {
+    return drizzle(createClient({ url: tursoUrl, authToken: process.env.TURSO_AUTH_TOKEN }))
+  }
+  const file = process.env.KIN_DB_PATH ?? join(process.cwd(), "..", "data", "kin.sqlite")
+  return drizzle(createClient({ url: `file:${file}` }))
 }
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "migrations")
 
-/** Apply every finance migration (sorted) to a client. Idempotent-ish: the DDL
- * uses CREATE TABLE, so run it against a fresh DB. */
-export async function applyFinanceMigrations(client: Client): Promise<void> {
+/** Apply every finance migration (sorted) to a client. */
+function applyMigrations(client: Client): void {
   if (!existsSync(MIGRATIONS_DIR)) return
   const files = readdirSync(MIGRATIONS_DIR)
     .filter((n) => n.endsWith(".sql"))
@@ -35,21 +36,19 @@ export async function applyFinanceMigrations(client: Client): Promise<void> {
   for (const name of files) {
     const sqlText = readFileSync(join(MIGRATIONS_DIR, name), "utf8")
     if (sqlText.trim().length === 0) continue
-    await client.executeMultiple(sqlText)
+    // Un-awaited: a single file: client serializes FIFO, so the DDL runs before
+    // whatever the test awaits next (clarity's contract; keeps this sync).
+    void client.executeMultiple(sqlText).catch(() => {})
   }
 }
 
-/** Throwaway file: DB with the finance schema applied — the only way tests get a DB. */
-export async function createTestFinanceDb(): Promise<{
-  db: FinanceDb
-  cleanup: () => void
-  file: string
-}> {
+/** The ONLY way tests obtain a DB: a throwaway file: DB with the schema applied. */
+export function createTestDb(): { db: FinanceDb; cleanup: () => void; file: string } {
   const file = join(tmpdir(), `kin-finance-${randomUUID()}.db`)
   const client = createClient({ url: `file:${file}` })
-  await applyFinanceMigrations(client)
-  const db = drizzle(client, { schema })
-  const cleanup = () => {
+  const db = drizzle(client)
+  applyMigrations(client)
+  const cleanup = (): void => {
     try {
       client.close()
     } catch {
