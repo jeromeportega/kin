@@ -1,0 +1,71 @@
+MIME-Version: 1.0
+Date: Mon, 05 Jan 2026 10:00:00 +0000
+From: auto-confirm@amazon.com
+To: customer@example.com
+Subject: Your Amazon.com order of "USB-C Cable, 2-pack" (#113-1234567-1234567)
+Message-ID: <AMZ-CONFIRM-001.20260105@amazon.com>
+Content-Type: multipart/alternative; boundary="==Amazon_Boundary_001=="
+
+--==Amazon_Boundary_001==
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Amazon.com Order Confirmation
+
+Order #113-1234567-1234567
+Order Date: January 5, 2026
+
+Items Ordered:
+
+1. USB-C Cable, 2-pack
+   Quantity: 1
+   Price: $13.99
+
+2. Phone Stand
+   Quantity: 1
+   Price: $10.49
+
+Order Total: $24.48
+
+Thank you for shopping with us!
+Amazon.com
+
+--==Amazon_Boundary_001==
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<!DOCTYPE html>
+<html>
+<head><title>Order Confirmation</title></head>
+<body>
+<h1>Order Confirmation</h1>
+<p>Order #113-1234567-1234567</p>
+<p>Order Date: January 5, 2026</p>
+<p>USB=2DC Cable (USB-C Cable, 2-pack) has been ordered.</p>
+<table>
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th>Quantity</th>
+      <th>Price</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>USB-C Cable, 2-pack</td>
+      <td>Qty: 1</td>
+      <td>$13.99</td>
+    </tr>
+    <tr>
+      <td>Phone Stand</td>
+      <td>Qty: 1</td>
+      <td>$10.49</td>
+    </tr>
+  </tbody>
+</table>
+<p>Order Total: $24.48</p>
+<p>Thank you for shopping with us!</p>
+</body>
+</html>
+
+--==Amazon_Boundary_001==--
