@@ -1,8 +1,11 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/auth"
 import { resolveHouseholdScope, fetchQueue } from "@/lib/finance/server"
+import { plaidConfigured } from "@/lib/finance/plaid/client"
+import { hasPlaidItem } from "@/lib/finance/plaid/server"
 import { QueueView } from "@/components/finance/queue/QueueView"
 import { FinanceUpload } from "@/components/finance/FinanceUpload"
+import { PlaidConnect } from "@/components/finance/PlaidConnect"
 
 export const dynamic = "force-dynamic"
 
@@ -11,6 +14,8 @@ export default async function FinancePage() {
   if (!session?.user?.email) redirect("/signin")
 
   const scope = await resolveHouseholdScope(session.user.email)
+  const plaidEnabled = plaidConfigured()
+  const hasBank = plaidEnabled ? await hasPlaidItem(scope) : false
   const items = await fetchQueue(scope)
 
   return (
@@ -22,6 +27,7 @@ export default async function FinancePage() {
           Amazon exports, and anything the reconcile loop is unsure of lands here.
         </p>
       </div>
+      {plaidEnabled && <PlaidConnect hasBank={hasBank} />}
       <FinanceUpload />
       <QueueView items={items} />
     </main>

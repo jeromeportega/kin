@@ -63,16 +63,52 @@ export const households = sqliteTable('households', {
   createdAt: createdAt(),
 });
 
-export const accounts = sqliteTable('accounts', {
-  id: text('id').primaryKey(),
-  householdId: text('household_id')
-    .notNull()
-    .references(() => households.id),
-  name: text('name').notNull(),
-  type: text('type'),
-  institution: text('institution'),
-  createdAt: createdAt(),
-});
+export const accounts = sqliteTable(
+  'accounts',
+  {
+    id: text('id').primaryKey(),
+    householdId: text('household_id')
+      .notNull()
+      .references(() => households.id),
+    name: text('name').notNull(),
+    type: text('type'),
+    institution: text('institution'),
+    // Plaid origin, both null for manual / CSV accounts. plaidAccountId is
+    // Plaid's globally-unique account id; the unique index gives one kin account
+    // per Plaid account so re-syncs are idempotent.
+    plaidItemId: text('plaid_item_id').references(() => plaidItems.id),
+    plaidAccountId: text('plaid_account_id'),
+    createdAt: createdAt(),
+  },
+  (table) => ({
+    uxAccountsPlaidAccountId: uniqueIndex('ux_accounts_plaid_account_id').on(table.plaidAccountId),
+  }),
+);
+
+/**
+ * One row per linked Plaid Item (institution). See the 0005 migration for the
+ * access-token security note. `cursor` is the /transactions/sync pagination
+ * cursor, advanced after each successful sync so re-syncs fetch only deltas.
+ */
+export const plaidItems = sqliteTable(
+  'plaid_items',
+  {
+    id: text('id').primaryKey(),
+    householdId: text('household_id')
+      .notNull()
+      .references(() => households.id),
+    itemId: text('item_id').notNull(),
+    accessToken: text('access_token').notNull(),
+    institutionId: text('institution_id'),
+    institutionName: text('institution_name'),
+    cursor: text('cursor'),
+    status: text('status').notNull().default('active'),
+    createdAt: createdAt(),
+  },
+  (table) => ({
+    uxPlaidItemsItemId: uniqueIndex('ux_plaid_items_item_id').on(table.itemId),
+  }),
+);
 
 export const transactions = sqliteTable(
   'transactions',
