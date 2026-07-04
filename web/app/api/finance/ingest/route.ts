@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm"
 import { auth } from "@/auth"
 import { createDb, type FinanceDb } from "@/lib/finance/db/client"
 import { accounts } from "@/lib/finance/db/schema"
-import { resolveHouseholdScope } from "@/lib/finance/server"
+import { resolveHouseholdScope, reconcileHousehold } from "@/lib/finance/server"
 import { importSource } from "@/lib/finance/core/ingest/pipeline"
 import { bankAdapter } from "@/lib/finance/core/adapters/bank/bank.adapter"
 import { amazonAdapter } from "@/lib/finance/core/adapters/amazon/amazon.adapter"
@@ -58,6 +58,9 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const result = await importSource(db, input, ctx, adapters)
+    // Re-link the household now that new rows have landed: a bank import matches
+    // against orders/receipts already present, and vice versa.
+    await reconcileHousehold(scope)
     revalidatePath("/finance")
     return Response.json({ ok: true, ...result }, { status: 200 })
   } catch (err) {
