@@ -56,6 +56,10 @@ const createdAt = () =>
 export const households = sqliteTable('households', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
+  // kin adaptation: a household is owned by a kin user (session email), replacing
+  // clarity's single hardcoded demo household. Nullable so clarity's own migrations
+  // still apply cleanly; kin's resolveHouseholdScope populates it.
+  ownerUserId: text('owner_user_id'),
   createdAt: createdAt(),
 });
 
