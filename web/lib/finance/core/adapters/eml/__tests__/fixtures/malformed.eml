@@ -1,0 +1,4 @@
+This is not a valid MIME email at all.
+It has no headers, no Content-Type, and no valid structure.
+Just some garbage text that should cause the parser to fail gracefully.
+<<< INVALID MIME >>>

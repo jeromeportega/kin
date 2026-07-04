@@ -50,9 +50,13 @@ describe('stub adapter slots (retailer-api, eml)', () => {
     );
   });
 
-  it('emlAdapter declines support and throws NotImplemented on normalize (FR-9)', () => {
+  it('emlAdapter declines support and returns an error batch for unrecognized bytes (FR-9)', () => {
     expect(emlAdapter.kind).toBe('eml');
+    // Unrecognized bytes (not a valid Amazon email) → supports() = false
     expect(emlAdapter.supports(makeInput('eml'))).toBe(false);
-    expect(() => emlAdapter.normalize(makeInput('eml'))).toThrow(NotImplementedError);
+    // normalize() must never throw — returns empty orders + ImportError (FR-10)
+    const batch = emlAdapter.normalize(makeInput('eml')) as NormalizedBatch;
+    expect(batch.orders).toEqual([]);
+    expect(batch.errors.length).toBeGreaterThan(0);
   });
 });
