@@ -8,8 +8,9 @@ import { assembleQueue } from "./core/queue/assemble"
 import { reconcile } from "./core/reconcile/engine"
 import { DrizzleReconcileSource } from "./core/reconcile/source"
 import { DrizzleReconcileSink } from "./core/reconcile/sink"
+import { applyCorrection, type CorrectionAction } from "./core/corrections/apply"
 import type { HouseholdScope } from "./core/scope"
-import type { QueueItem } from "./core/queue/types"
+import type { QueueItem, QueueItemType } from "./core/queue/types"
 
 // The finance module's server entry points for kin's web layer: household scope
 // tied to the kin user, and the review-queue read. Reads always hit the LIVE
@@ -48,4 +49,19 @@ export async function reconcileHousehold(scope: HouseholdScope): Promise<void> {
   const inputs = await new DrizzleReconcileSource(db()).load(scope.householdId)
   const ledger = reconcile(inputs)
   await new DrizzleReconcileSink(db()).persist(scope.householdId, ledger)
+}
+
+/** Record a review-queue decision (confirm / dismiss / correct). Writes the
+ *  terminal review_decisions row via applyCorrection, which removes the item from
+ *  the queue on the next read (assembleQueue anti-joins decided items). */
+export async function recordQueueDecision(
+  scope: HouseholdScope,
+  itemId: string,
+  itemType: QueueItemType,
+  action: CorrectionAction,
+): Promise<void> {
+  const gw = gatewayFor({ RECON_BACKEND: "live" })
+  // applyCorrection only reads item.id + item.type; reason is unused here.
+  const item: QueueItem = { id: itemId, type: itemType, reason: "" }
+  await applyCorrection(scope, item, action, gw, db())
 }

@@ -4,6 +4,7 @@ import { resolveHouseholdScope, fetchQueue } from "@/lib/finance/server"
 import { plaidConfigured } from "@/lib/finance/plaid/client"
 import { hasPlaidItem } from "@/lib/finance/plaid/server"
 import { QueueView } from "@/components/finance/queue/QueueView"
+import { QueueItemActions } from "@/components/finance/queue/QueueItemActions"
 import { FinanceUpload } from "@/components/finance/FinanceUpload"
 import { PlaidConnect } from "@/components/finance/PlaidConnect"
 
@@ -29,7 +30,7 @@ export default async function FinancePage() {
       </div>
       {plaidEnabled && <PlaidConnect hasBank={hasBank} />}
       <FinanceUpload />
-      <QueueView items={items} />
+      <QueueView items={items} renderActions={(item) => <QueueItemActions item={item} />} />
     </main>
   )
 }
