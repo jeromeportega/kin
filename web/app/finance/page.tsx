@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { auth } from "@/auth"
 import { resolveHouseholdScope, fetchQueue } from "@/lib/finance/server"
+import { DEFAULT_CATEGORIES } from "@/lib/finance/db/schema"
 import { plaidConfigured } from "@/lib/finance/plaid/client"
 import { hasPlaidItem } from "@/lib/finance/plaid/server"
 import { QueueView } from "@/components/finance/queue/QueueView"
@@ -30,7 +31,10 @@ export default async function FinancePage() {
       </div>
       {plaidEnabled && <PlaidConnect hasBank={hasBank} />}
       <FinanceUpload />
-      <QueueView items={items} renderActions={(item) => <QueueItemActions item={item} />} />
+      <QueueView
+        items={items}
+        renderActions={(item) => <QueueItemActions item={item} categories={[...DEFAULT_CATEGORIES]} />}
+      />
     </main>
   )
 }

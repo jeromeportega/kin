@@ -40,10 +40,26 @@ describe("POST /api/finance/queue/decision", () => {
     expect(h.recordQueueDecision).not.toHaveBeenCalled()
   })
 
-  it("400s on an unsupported action (correct needs a payload UI)", async () => {
+  it("400s on a correct without a valid category", async () => {
     const res = await POST(jsonReq({ itemId: "t1", itemType: "unmatched_txn", action: "correct" }))
     expect(res.status).toBe(400)
+    const bad = await POST(
+      jsonReq({ itemId: "t1", itemType: "unmatched_txn", action: "correct", categoryId: "not_a_category" }),
+    )
+    expect(bad.status).toBe(400)
     expect(h.recordQueueDecision).not.toHaveBeenCalled()
+  })
+
+  it("records a correct with a pickCategoryId correction", async () => {
+    const res = await POST(
+      jsonReq({ itemId: "t7", itemType: "unmatched_txn", action: "correct", categoryId: "groceries" }),
+    )
+    expect(res.status).toBe(200)
+    expect(h.recordQueueDecision).toHaveBeenCalledWith({ householdId: "h1" }, "t7", "unmatched_txn", {
+      type: "correct",
+      correction: { variant: "pickCategoryId", categoryId: "groceries" },
+    })
+    expect(h.revalidatePath).toHaveBeenCalledWith("/finance")
   })
 
   it("records a confirm and revalidates /finance", async () => {
