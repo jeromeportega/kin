@@ -38,13 +38,22 @@ describe("shadcn present", () => {
 describe("env documentation", () => {
   const webRoot = path.resolve(__dirname, "..");
 
-  it("web/.env.example documents all required env vars", () => {
+  it("web/.env.example documents every env var the app reads", () => {
     const envExample = fs.readFileSync(path.join(webRoot, ".env.example"), "utf-8");
+    // The full set the web code reads via process.env (platform-provided
+    // TMPDIR/NEXT_PHASE and the AUTH_GOOGLE_* aliases excluded). Keep this in
+    // lockstep with the codebase so .env.example never drifts again.
     for (const key of [
       "AUTH_SECRET",
       "GOOGLE_CLIENT_ID",
       "GOOGLE_CLIENT_SECRET",
-      "KIN_API_BASE_URL",
+      "TURSO_DATABASE_URL",
+      "TURSO_AUTH_TOKEN",
+      "KIN_DB_PATH",
+      "CRON_SECRET",
+      "PLAID_CLIENT_ID",
+      "PLAID_SECRET",
+      "PLAID_ENV",
       "KIN_DEMO_USER",
     ]) {
       expect(envExample, `${key} missing from .env.example`).toContain(key);
