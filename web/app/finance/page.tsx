@@ -8,6 +8,7 @@ import { QueueView } from "@/components/finance/queue/QueueView"
 import { QueueItemActions } from "@/components/finance/queue/QueueItemActions"
 import { FinanceUpload } from "@/components/finance/FinanceUpload"
 import { PlaidConnect } from "@/components/finance/PlaidConnect"
+import { EmailReceiptImport } from "@/app/finance/EmailReceiptImport"
 
 export const dynamic = "force-dynamic"
 
@@ -31,6 +32,7 @@ export default async function FinancePage() {
       </div>
       {plaidEnabled && <PlaidConnect hasBank={hasBank} />}
       <FinanceUpload />
+      <EmailReceiptImport />
       <QueueView
         items={items}
         renderActions={(item) => <QueueItemActions item={item} categories={[...DEFAULT_CATEGORIES]} />}
