@@ -14,6 +14,23 @@ const MAX_HTML_BYTES = 2 * 1024 * 1024;
 const AMAZON_DOMAIN_RE = /^[\w.+\-]+@([\w\-]+\.)?amazon\.com$/i;
 const AMAZON_ORDER_ID_RE = /\b(\d{3}-\d{7}-\d{7})\b/;
 
+/**
+ * Order-summary and payment rows render as `<tr>` with a price cell but are NOT
+ * line items: Subtotal / Shipping / Tax / (Grand|Order) Total, and payment lines
+ * like gift-card / promotion / store-credit applied. Capturing these inflates the
+ * item set and — because summary payment lines are negative — mis-books them as
+ * returns (accruing phantom store credit). Reject any row whose first cell is one
+ * of these labels. Anchored at start so a product titled "Total Wireless …" or an
+ * "Amazon eGift Card" purchase (name doesn't start with the payment phrasing) is
+ * still kept; the reconciliation guard in `parse()` is the backstop.
+ */
+const SUMMARY_LABEL_RE =
+  /^(sub[\s-]?total|item\(s\)\s+subtotal|shipping(\s*&(amp;)?\s*handling)?|handling|free\s+shipping|estimated\s+tax|sales\s+tax|tax|total\s+before\s+tax|order\s+total|grand\s+total|total|promotion(s)?(\s+applied)?|promo(tion)?\s+code|discount(s)?|coupon|savings|gift\s*card\s+(amount|balance|applied)|store\s+credit\s+(amount|balance|applied)|balance\s+applied|rewards?\s+(points?|applied)|import\s+fees?(\s+deposit)?)\b/i;
+
+function isSummaryOrPaymentLabel(name: string): boolean {
+  return SUMMARY_LABEL_RE.test(name.trim());
+}
+
 /** Extract the bare address-spec from a From header, stripping any display name. */
 function extractFromAddress(from: string): string {
   const angleMatch = /<([^>]*)>/.exec(from);
@@ -88,6 +105,9 @@ function parseItemsFromHtml(html: string): RawItem[] {
     if (!name || name.length === 0) continue;
     // Skip header rows
     if (/^(item|product|description|name)$/i.test(name)) continue;
+    // Skip order-summary / payment rows (Subtotal, Tax, Shipping, Total, gift
+    // card, promotion, …) — they are not line items.
+    if (isSummaryOrPaymentLabel(name)) continue;
 
     // Try to parse quantity from any cell matching "Quantity: N" or "Qty: N" or just a number
     let quantity = 1;
@@ -176,6 +196,20 @@ function parseOrderTotal(text: string): number | undefined {
   return undefined;
 }
 
+/** Parse the goods subtotal (pre-tax/shipping) — the value the line items must
+ *  sum to. Used by the reconciliation guard in `parse()`. */
+function parseSubtotal(text: string): number | undefined {
+  const m = /(?:item\(s\)\s+)?subtotal[:\s]+\$?\s*([\d,]+\.\d{2})/i.exec(text);
+  if (m?.[1]) {
+    try {
+      return parseAmountToCents(m[1]);
+    } catch {
+      // ignore
+    }
+  }
+  return undefined;
+}
+
 export const amazonEmailParser: RetailerEmailParser = {
   retailer: 'amazon',
   gmailQuery:
@@ -205,18 +239,46 @@ export const amazonEmailParser: RetailerEmailParser = {
     // Extract order total
     const orderTotalCents = parseOrderTotal(stripped);
 
-    // Extract items from HTML table rows
+    // Extract items from HTML table rows.
     const rawItems = parseItemsFromHtml(msg.html || source);
 
-    if (rawItems.length === 0) {
-      throw new Error(`Amazon email: no items found in order ${externalOrderId}`);
-    }
-
-    // Build NormalizedOrderItems — shipmentId is derived from context
+    // A refund/return email re-lists the original purchases (positive) alongside
+    // the refunded lines (negative). Those purchases were already booked by the
+    // confirmation email, so a refund email contributes ONLY its negative lines —
+    // otherwise the unreturned items are double-counted under a distinct
+    // shipmentId (avoids the double-book bug).
     const isReturnEmail = /refund|return/i.test(msg.subject);
     const shipmentId = isReturnEmail ? 'return' : 'confirmation';
+    const bookable = isReturnEmail ? rawItems.filter((r) => r.isReturn) : rawItems;
 
-    const items: NormalizedOrderItem[] = rawItems.map((raw, idx) => {
+    if (bookable.length === 0) {
+      throw new Error(
+        `Amazon email: no ${isReturnEmail ? 'refund ' : ''}items found in order ${externalOrderId}`,
+      );
+    }
+
+    // Reconciliation guard: for a purchase confirmation the line items must sum to
+    // the order's goods subtotal. A mismatch means a summary/payment row leaked in
+    // (or a real item was missed) — skip rather than persist wrong data that would
+    // corrupt reconciliation and the store-credit ledger. Falls back to a
+    // "must not exceed order total" check when no subtotal line is present.
+    if (!isReturnEmail) {
+      const purchaseSum = bookable.reduce((sum, r) => sum + r.amountCents, 0);
+      const subtotal = parseSubtotal(stripped);
+      if (subtotal !== undefined && purchaseSum !== subtotal) {
+        throw new Error(
+          `Amazon email ${externalOrderId}: items sum ${purchaseSum}¢ ≠ subtotal ${subtotal}¢ — skipping to avoid wrong data`,
+        );
+      }
+      if (subtotal === undefined && orderTotalCents !== undefined && purchaseSum > orderTotalCents) {
+        throw new Error(
+          `Amazon email ${externalOrderId}: items sum ${purchaseSum}¢ exceeds order total ${orderTotalCents}¢ — skipping`,
+        );
+      }
+    }
+
+    // Build NormalizedOrderItems.
+    const items: NormalizedOrderItem[] = bookable.map((raw, idx) => {
       const itemSeq = idx + 1;
       const sourceRowHash = sha256Hex(
         [

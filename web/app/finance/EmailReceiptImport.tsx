@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation"
 
 type ImportResult =
   | { ok: true; connected: false }
-  | { ok: true; connected: true; inserted: { transactions: number; orders: number; orderItems: number; storeCreditRows: number }; skippedDuplicates: number }
+  | {
+      ok: true
+      connected: true
+      inserted: { transactions: number; orders: number; orderItems: number; storeCreditRows: number }
+      skippedDuplicates: number
+      errors?: { rowRef: string; reason: string }[]
+    }
   | { ok: false; error: string }
 
 export function EmailReceiptImport() {
@@ -42,11 +48,16 @@ export function EmailReceiptImport() {
         setConnectGmail(true)
         return
       }
-      const { inserted, skippedDuplicates } = data
+      const { inserted, skippedDuplicates, errors } = data
       const parts: string[] = [`${inserted.orders} orders`, `${inserted.orderItems} items`]
       if (inserted.transactions > 0) parts.push(`${inserted.transactions} transactions`)
       if (inserted.storeCreditRows > 0) parts.push(`${inserted.storeCreditRows} store credit rows`)
-      setMsg(`Imported ${parts.join(", ")} (${skippedDuplicates} duplicates skipped).`)
+      // Surface emails that were skipped (unrecognized, unparseable, or failed the
+      // reconciliation guard) so silently-dropped receipts are visible.
+      const skippedEmails = errors?.length
+        ? ` — ${errors.length} email${errors.length === 1 ? "" : "s"} skipped (couldn't parse).`
+        : ""
+      setMsg(`Imported ${parts.join(", ")} (${skippedDuplicates} duplicates skipped).${skippedEmails}`)
       router.refresh()
     } catch (e) {
       setMsg(`Import failed: ${String(e)}`)

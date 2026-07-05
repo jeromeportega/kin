@@ -10,7 +10,7 @@ import { emlAdapter } from "@/lib/finance/core/adapters/eml.adapter"
 import { retailerApiAdapter } from "@/lib/finance/core/adapters/retailer-api.adapter"
 import { emlGmailQuery } from "@/lib/finance/core/adapters/eml/dispatch"
 import { readRefreshToken } from "@/lib/tokenStore"
-import { mintAccessToken, fetchRawMessages } from "@/lib/gmail"
+import { mintAccessToken, fetchRawMessages, ReauthRequired } from "@/lib/gmail"
 import type { SourceAdapter, ImportError } from "@/lib/finance/core/adapters/source-adapter"
 
 const IMPORT_LIMIT = 50
@@ -34,38 +34,48 @@ export async function POST(_request: Request): Promise<Response> {
 
   const clientId = process.env.GOOGLE_CLIENT_ID ?? process.env.AUTH_GOOGLE_ID ?? ""
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? process.env.AUTH_GOOGLE_SECRET ?? ""
-  const accessToken = await mintAccessToken(refreshToken, clientId, clientSecret)
 
-  const messages = await fetchRawMessages({
-    accessToken,
-    query: emlGmailQuery(),
-    limit: IMPORT_LIMIT,
-  })
+  try {
+    const accessToken = await mintAccessToken(refreshToken, clientId, clientSecret)
 
-  const scope = await resolveHouseholdScope(email)
-  const db = createDb()
+    const messages = await fetchRawMessages({
+      accessToken,
+      query: emlGmailQuery(),
+      limit: IMPORT_LIMIT,
+    })
 
-  const inserted = { transactions: 0, orders: 0, orderItems: 0, storeCreditRows: 0 }
-  let skippedDuplicates = 0
-  const errors: ImportError[] = []
+    const scope = await resolveHouseholdScope(email)
+    const db = createDb()
 
-  for (const msg of messages) {
-    const result = await importSource(
-      db,
-      { kind: "eml", filename: msg.messageId, bytes: msg.bytes },
-      { householdId: scope.householdId },
-      adapters,
-    )
-    inserted.transactions += result.inserted.transactions
-    inserted.orders += result.inserted.orders
-    inserted.orderItems += result.inserted.orderItems
-    inserted.storeCreditRows += result.inserted.storeCreditRows
-    skippedDuplicates += result.skippedDuplicates
-    errors.push(...result.errors)
+    const inserted = { transactions: 0, orders: 0, orderItems: 0, storeCreditRows: 0 }
+    let skippedDuplicates = 0
+    const errors: ImportError[] = []
+
+    for (const msg of messages) {
+      const result = await importSource(
+        db,
+        { kind: "eml", filename: msg.messageId, bytes: msg.bytes },
+        { householdId: scope.householdId },
+        adapters,
+      )
+      inserted.transactions += result.inserted.transactions
+      inserted.orders += result.inserted.orders
+      inserted.orderItems += result.inserted.orderItems
+      inserted.storeCreditRows += result.inserted.storeCreditRows
+      skippedDuplicates += result.skippedDuplicates
+      errors.push(...result.errors)
+    }
+
+    await reconcileHousehold(scope)
+    revalidatePath("/finance")
+
+    return Response.json({ ok: true, connected: true, inserted, skippedDuplicates, errors }, { status: 200 })
+  } catch (err) {
+    // A revoked / expired refresh token surfaces as ReauthRequired — steer the
+    // user to reconnect Gmail rather than showing a generic 500.
+    if (err instanceof ReauthRequired) {
+      return Response.json({ ok: true, connected: false }, { status: 200 })
+    }
+    return Response.json({ ok: false, error: String(err) }, { status: 500 })
   }
-
-  await reconcileHousehold(scope)
-  revalidatePath("/finance")
-
-  return Response.json({ ok: true, connected: true, inserted, skippedDuplicates, errors }, { status: 200 })
 }

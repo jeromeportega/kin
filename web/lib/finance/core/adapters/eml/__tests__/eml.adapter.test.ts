@@ -208,11 +208,13 @@ describe('emlAdapter.normalize() — Amazon return/refund (fixture b)', () => {
     expect(ret.refundDestination).toBe('card');
   });
 
-  it('purchase lines: positive amountCents, isReturn=false', () => {
+  it('books ONLY return lines — it does not re-book the re-listed purchases (no double-count)', () => {
     const order = getOrder();
-    const purchases = order.items.filter((i) => !i.isReturn);
-    expect(purchases.length).toBeGreaterThanOrEqual(1);
-    expect(purchases.every((i) => i.amountCents > 0)).toBe(true);
+    // The refund email re-lists Wireless Mouse ($30) + Mechanical Keyboard ($45)
+    // as positives, but those were already booked by their confirmation email.
+    // Re-booking them (under a distinct shipmentId) would double-count spend.
+    expect(order.items.filter((i) => !i.isReturn)).toHaveLength(0);
+    expect(order.items.every((i) => i.isReturn)).toBe(true);
   });
 });
 
@@ -431,5 +433,61 @@ describe('Amazon parser — parenthesized accounting amounts', () => {
     expect(item).toBeDefined();
     expect(item!.amountCents).toBe(-4500);
     expect(item!.isReturn).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Order-summary / payment rows are NOT line items (B1 — the parser must not
+// scrape Subtotal/Shipping/Tax/Grand-Total/gift-card rows as items). The fixture
+// deliberately renders those as <tr> rows in the item table — the case the
+// original fixtures avoided, which let the bug ship.
+// ---------------------------------------------------------------------------
+
+describe('emlAdapter.normalize() — order-summary rows are rejected', () => {
+  function getOrder(): NormalizedOrder {
+    const batch = normalizeSync(emlInput('amazon-order-summary-rows.eml', 'msg-summary-001'));
+    expect(batch.errors).toEqual([]);
+    expect(batch.orders).toHaveLength(1);
+    return batch.orders[0]!;
+  }
+
+  it('captures ONLY the two real line items — not Subtotal/Shipping/Tax/Grand Total', () => {
+    const order = getOrder();
+    expect(order.items).toHaveLength(2);
+    expect(order.items.map((i) => i.description).sort()).toEqual([
+      'Phone Stand',
+      'USB-C Cable, 2-pack',
+    ]);
+  });
+
+  it('line items reconcile to the subtotal ($24.48), not the grand total', () => {
+    const order = getOrder();
+    const sum = order.items.reduce((s, i) => s + i.amountCents, 0);
+    expect(sum).toBe(2448);
+  });
+
+  it('the negative "Gift Card Amount" summary row is NOT booked as a return (no phantom store credit)', () => {
+    const order = getOrder();
+    expect(order.items.some((i) => i.isReturn)).toBe(false);
+    expect(order.items.some((i) => i.refundDestination === 'gift_card')).toBe(false);
+  });
+
+  it('orderTotalCents is the grand total ($27.57), independent of the item sum', () => {
+    const order = getOrder();
+    expect(order.orderTotalCents).toBe(2757);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reconciliation guard: if the line items don't sum to the stated subtotal, the
+// parse is untrustworthy — skip (ImportError), never persist wrong data.
+// ---------------------------------------------------------------------------
+
+describe('emlAdapter.normalize() — reconciliation guard', () => {
+  it('skips an order whose items do not sum to the stated subtotal, with an ImportError', () => {
+    const batch = normalizeSync(emlInput('amazon-order-unreconciled.eml', 'msg-unrecon-001'));
+    expect(batch.orders).toHaveLength(0);
+    expect(batch.errors).toHaveLength(1);
+    expect(batch.errors[0]!.reason).toMatch(/subtotal|reconcile/i);
   });
 });
