@@ -1,0 +1,28 @@
+MIME-Version: 1.0
+Date: Tue, 06 Jan 2026 10:00:00 +0000
+From: auto-confirm@amazon.com
+To: customer@example.com
+Subject: Your Amazon.com order (#113-7654321-7654321)
+Message-ID: <AMZ-CONFIRM-SUMMARY-001@amazon.com>
+Content-Type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html>
+<body>
+<h1>Order Confirmation</h1>
+<p>Order #113-7654321-7654321</p>
+<p>Order Date: January 6, 2026</p>
+<table>
+  <tr><th>Item</th><th>Qty</th><th>Price</th></tr>
+  <tr><td>USB-C Cable, 2-pack</td><td>Qty: 1</td><td>$13.99</td></tr>
+  <tr><td>Phone Stand</td><td>Qty: 1</td><td>$10.49</td></tr>
+  <tr><td>Subtotal</td><td>$24.48</td></tr>
+  <tr><td>Shipping &amp; Handling</td><td>$5.99</td></tr>
+  <tr><td>Estimated tax</td><td>$2.10</td></tr>
+  <tr><td>Gift Card Amount</td><td>-$5.00</td></tr>
+  <tr><td>Grand Total</td><td>$27.57</td></tr>
+</table>
+<p>Subtotal: $24.48</p>
+<p>Order Total: $27.57</p>
+</body>
+</html>

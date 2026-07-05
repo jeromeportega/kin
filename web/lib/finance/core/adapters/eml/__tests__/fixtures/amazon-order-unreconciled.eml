@@ -1,0 +1,25 @@
+MIME-Version: 1.0
+Date: Wed, 07 Jan 2026 10:00:00 +0000
+From: auto-confirm@amazon.com
+To: customer@example.com
+Subject: Your Amazon.com order (#113-9999999-9999999)
+Message-ID: <AMZ-CONFIRM-UNRECON-001@amazon.com>
+Content-Type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html>
+<body>
+<h1>Order Confirmation</h1>
+<p>Order #113-9999999-9999999</p>
+<p>Order Date: January 7, 2026</p>
+<table>
+  <tr><th>Item</th><th>Qty</th><th>Price</th></tr>
+  <tr><td>USB-C Cable, 2-pack</td><td>Qty: 1</td><td>$13.99</td></tr>
+  <tr><td>Phone Stand</td><td>Qty: 1</td><td>$10.49</td></tr>
+  <tr><td>Subtotal</td><td>$30.00</td></tr>
+  <tr><td>Grand Total</td><td>$30.00</td></tr>
+</table>
+<p>Subtotal: $30.00</p>
+<p>Order Total: $30.00</p>
+</body>
+</html>

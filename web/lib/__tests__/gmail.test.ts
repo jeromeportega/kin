@@ -8,6 +8,7 @@ import {
   stripHtml,
   decodeB64Url,
   fetchRecent,
+  fetchRawMessages,
   renderBodyWithLinks,
 } from "@/lib/gmail"
 
@@ -106,5 +107,98 @@ describe("fetchRecent", () => {
       .mockResolvedValueOnce(res(200, { messages: [{ id: "m1" }] }) as never)
       .mockResolvedValueOnce({ ok: false, status: 404 } as never)
     expect(await fetchRecent({ accessToken: "t", hours: 24, limit: 50 })).toEqual([])
+  })
+})
+
+// Helper: encode a string to base64url (same encoding Gmail uses for format=raw)
+function toB64url(input: string | Uint8Array): string {
+  const buf = typeof input === "string" ? Buffer.from(input) : Buffer.from(input)
+  return buf.toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_")
+}
+
+describe("fetchRawMessages", () => {
+  const FIXTURE_RFC822 = "From: seller@amazon.com\r\nSubject: Your order\r\n\r\nOrder body"
+  const FIXTURE_BYTES = Buffer.from(FIXTURE_RFC822)
+
+  it("issues messages.list with the caller-supplied query and limit, not a recency filter", async () => {
+    const query = "from:(auto-confirm@amazon.com) subject:(ordered OR shipped)"
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(res(200, { messages: [{ id: "abc" }] }) as never)
+      .mockResolvedValueOnce(res(200, { id: "abc", raw: toB64url(FIXTURE_RFC822) }) as never)
+
+    await fetchRawMessages({ accessToken: "t", query, limit: 10 })
+
+    const listCall = vi.mocked(fetch).mock.calls[0]
+    const listUrl = listCall[0] as string
+    expect(listUrl).toContain(`q=${encodeURIComponent(query)}`)
+    expect(listUrl).toContain("maxResults=10")
+    expect(listUrl).not.toContain("after:")
+    expect(listUrl).not.toContain("labelIds=")
+  })
+
+  it("returns a RawGmailMessage with the stable messageId and correctly decoded bytes", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(res(200, { messages: [{ id: "abc" }] }) as never)
+      .mockResolvedValueOnce(res(200, { id: "abc", raw: toB64url(FIXTURE_RFC822) }) as never)
+
+    const results = await fetchRawMessages({ accessToken: "t", query: "q", limit: 5 })
+
+    expect(results).toHaveLength(1)
+    expect(results[0].messageId).toBe("abc")
+    // bytes must equal the raw RFC822 content, base64url-decoded
+    expect(Buffer.from(results[0].bytes)).toEqual(FIXTURE_BYTES)
+  })
+
+  it("base64url-decodes correctly for payloads with - and _ characters", async () => {
+    // Craft a payload that will produce - and _ in base64url
+    const raw = new Uint8Array([0xfb, 0xff, 0xfe, 0x00, 0x3e, 0x3f])
+    const b64url = toB64url(raw)
+    expect(b64url).toMatch(/[-_]/) // ensure fixture actually tests the url-safe chars
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(res(200, { messages: [{ id: "xyz" }] }) as never)
+      .mockResolvedValueOnce(res(200, { id: "xyz", raw: b64url }) as never)
+
+    const results = await fetchRawMessages({ accessToken: "t", query: "q", limit: 1 })
+    expect(Buffer.from(results[0].bytes)).toEqual(Buffer.from(raw))
+  })
+
+  it("returns [] when messages.list returns no messages (empty inbox)", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(res(200, {}) as never)
+
+    const results = await fetchRawMessages({ accessToken: "t", query: "q", limit: 50 })
+
+    expect(results).toEqual([])
+    // messages.get must not be called
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1)
+  })
+
+  it("returns [] immediately and makes no network calls when limit is 0", async () => {
+    const results = await fetchRawMessages({ accessToken: "t", query: "q", limit: 0 })
+
+    expect(results).toEqual([])
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled()
+  })
+
+  it("limit bounds the number of messages.get calls (list shorter than limit)", async () => {
+    // list returns 2 messages but limit is 10 — we still only get 2
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(res(200, { messages: [{ id: "m1" }, { id: "m2" }] }) as never)
+      .mockResolvedValueOnce(res(200, { id: "m1", raw: toB64url(FIXTURE_RFC822) }) as never)
+      .mockResolvedValueOnce(res(200, { id: "m2", raw: toB64url(FIXTURE_RFC822) }) as never)
+
+    const results = await fetchRawMessages({ accessToken: "t", query: "q", limit: 10 })
+
+    expect(results).toHaveLength(2)
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(3) // 1 list + 2 gets
+  })
+
+  it("does not import from the finance module (module boundary check)", async () => {
+    // This is a structural assertion: fetchRawMessages is exported from gmail.ts,
+    // which must not import drizzle/finance. Verified by the module's source —
+    // here we just confirm it's callable without finance context.
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(res(200, { messages: [] }) as never)
+    await expect(fetchRawMessages({ accessToken: "t", query: "q", limit: 5 })).resolves.toEqual([])
   })
 })

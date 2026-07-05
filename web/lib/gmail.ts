@@ -166,6 +166,45 @@ function toFetched(msg: GmailMessage): FetchedEmail {
   }
 }
 
+/** A raw RFC822 message from Gmail with its stable message id. */
+export interface RawGmailMessage {
+  messageId: string  // stable Gmail id (messages.list / messages.get `id`)
+  bytes: Uint8Array  // raw RFC822, base64url-decoded from messages.get?format=raw
+}
+
+/**
+ * Fetch raw RFC822 bytes for Gmail messages matching a sender/subject query.
+ * The caller is responsible for constructing `query` (e.g. `emlGmailQuery()`).
+ * Never imports from the finance module — purely a Gmail I/O helper.
+ */
+export async function fetchRawMessages(opts: {
+  accessToken: string
+  query: string
+  limit: number
+}): Promise<RawGmailMessage[]> {
+  const { accessToken, query, limit } = opts
+  if (limit <= 0) return []
+
+  const auth = { Authorization: `Bearer ${accessToken}` }
+
+  const listUrl =
+    `${GMAIL_API}/messages?q=${encodeURIComponent(query)}&maxResults=${limit}`
+  const listRes = await fetch(listUrl, { headers: auth })
+  if (!listRes.ok) throw new Error(`Gmail list failed: ${listRes.status}`)
+  const list = (await listRes.json()) as { messages?: { id: string }[] }
+
+  const out: RawGmailMessage[] = []
+  for (const ref of list.messages ?? []) {
+    const getRes = await fetch(`${GMAIL_API}/messages/${ref.id}?format=raw`, { headers: auth })
+    if (getRes.status === 404) continue
+    if (!getRes.ok) throw new Error(`Gmail get failed: ${getRes.status}`)
+    const msg = (await getRes.json()) as { id: string; raw: string }
+    const bytes = Buffer.from(msg.raw.replace(/-/g, "+").replace(/_/g, "/"), "base64")
+    out.push({ messageId: msg.id, bytes: new Uint8Array(bytes) })
+  }
+  return out
+}
+
 /** Fetch recent INBOX messages from Gmail, mapped to FetchedEmail. */
 export async function fetchRecent(opts: {
   accessToken: string

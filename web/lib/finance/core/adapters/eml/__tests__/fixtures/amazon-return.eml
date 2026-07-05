@@ -1,0 +1,81 @@
+MIME-Version: 1.0
+Date: Fri, 15 Mar 2026 14:30:00 +0000
+From: returns@amazon.com
+To: customer@example.com
+Subject: Your Amazon.com refund has been issued (#333-9876543-2109876)
+Message-ID: <AMZ-RETURN-001.20260315@amazon.com>
+Content-Type: multipart/alternative; boundary="==Amazon_Boundary_002=="
+
+--==Amazon_Boundary_002==
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+Amazon.com Refund Confirmation
+
+Order #333-9876543-2109876
+Order Date: March 10, 2026
+
+Your refund has been processed.
+
+Items:
+1. Wireless Mouse
+   Quantity: 1
+   Price: $30.00
+
+2. Mechanical Keyboard
+   Quantity: 1
+   Price: $45.00
+
+Return Item:
+3. Mechanical Keyboard (Returned)
+   Quantity: 1
+   Price: -$45.00
+
+Order Total: $30.00
+
+--==Amazon_Boundary_002==
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<!DOCTYPE html>
+<html>
+<head><title>Refund Confirmation</title></head>
+<body>
+<h1>Refund Confirmation</h1>
+<p>Order #333-9876543-2109876</p>
+<p>Order Date: March 10, 2026</p>
+<table>
+  <thead>
+    <tr>
+      <th>Item</th>
+      <th>Quantity</th>
+      <th>Refund Method</th>
+      <th>Price</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Wireless Mouse</td>
+      <td>Qty: 1</td>
+      <td>Visa - 4321</td>
+      <td>$30.00</td>
+    </tr>
+    <tr>
+      <td>Mechanical Keyboard</td>
+      <td>Qty: 1</td>
+      <td>Visa - 4321</td>
+      <td>$45.00</td>
+    </tr>
+    <tr>
+      <td>Mechanical Keyboard (Returned)</td>
+      <td>Qty: 1</td>
+      <td>Visa - 4321</td>
+      <td>-$45.00</td>
+    </tr>
+  </tbody>
+</table>
+<p>Order Total: $30.00</p>
+</body>
+</html>
+
+--==Amazon_Boundary_002==--
