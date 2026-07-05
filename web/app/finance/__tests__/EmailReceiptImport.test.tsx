@@ -118,6 +118,22 @@ describe("EmailReceiptImport", () => {
     })
   })
 
+  // ── Non-401 server error ─────────────────────────────────────────────────
+
+  it("on a non-401 server error (e.g. 500), shows an error message and does not call router.refresh", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "Internal Server Error" }), { status: 500 })
+    )
+
+    render(<EmailReceiptImport />)
+    fireEvent.click(screen.getByRole("button", { name: /import receipts from email/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/import failed \(500\)/i)).toBeInTheDocument()
+    })
+    expect(mockRouterRefresh).not.toHaveBeenCalled()
+  })
+
   // ── 401 handled gracefully ───────────────────────────────────────────────
 
   it("on 401, shows session-expired message and does not call router.refresh", async () => {

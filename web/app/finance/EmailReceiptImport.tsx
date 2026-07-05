@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 type ImportResult =
   | { ok: true; connected: false }
   | { ok: true; connected: true; inserted: { transactions: number; orders: number; orderItems: number; storeCreditRows: number }; skippedDuplicates: number }
+  | { ok: false; error: string }
 
 export function EmailReceiptImport() {
   const router = useRouter()
@@ -23,19 +24,30 @@ export function EmailReceiptImport() {
         setMsg("Session expired — please sign in again.")
         return
       }
-      const data = (await res.json()) as ImportResult
-      if (data.ok && !data.connected) {
+      if (!res.ok) {
+        setMsg(`Import failed (${res.status})`)
+        return
+      }
+      const body = (await res.json()) as unknown
+      if (typeof (body as Record<string, unknown>).ok !== "boolean") {
+        setMsg("Import failed: unexpected response")
+        return
+      }
+      const data = body as ImportResult
+      if (!data.ok) {
+        setMsg(data.error)
+        return
+      }
+      if (!data.connected) {
         setConnectGmail(true)
         return
       }
-      if (data.ok && data.connected) {
-        const { inserted, skippedDuplicates } = data
-        setMsg(
-          `Imported ${inserted.orders} orders, ${inserted.orderItems} items` +
-            ` (${skippedDuplicates} duplicates skipped).`
-        )
-        router.refresh()
-      }
+      const { inserted, skippedDuplicates } = data
+      const parts: string[] = [`${inserted.orders} orders`, `${inserted.orderItems} items`]
+      if (inserted.transactions > 0) parts.push(`${inserted.transactions} transactions`)
+      if (inserted.storeCreditRows > 0) parts.push(`${inserted.storeCreditRows} store credit rows`)
+      setMsg(`Imported ${parts.join(", ")} (${skippedDuplicates} duplicates skipped).`)
+      router.refresh()
     } catch (e) {
       setMsg(`Import failed: ${String(e)}`)
     } finally {
@@ -56,7 +68,7 @@ export function EmailReceiptImport() {
       {connectGmail && (
         <span>
           Connect Gmail to import email receipts.{" "}
-          <a href="/api/auth/signin" className="underline">
+          <a href="/api/auth/signin/google?callbackUrl=/finance" className="underline">
             Connect Gmail
           </a>
         </span>

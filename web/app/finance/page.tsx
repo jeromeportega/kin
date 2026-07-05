@@ -8,7 +8,7 @@ import { QueueView } from "@/components/finance/queue/QueueView"
 import { QueueItemActions } from "@/components/finance/queue/QueueItemActions"
 import { FinanceUpload } from "@/components/finance/FinanceUpload"
 import { PlaidConnect } from "@/components/finance/PlaidConnect"
-import { EmailReceiptImport } from "@/app/finance/EmailReceiptImport"
+import { EmailReceiptImport } from "./EmailReceiptImport"
 
 export const dynamic = "force-dynamic"
 
