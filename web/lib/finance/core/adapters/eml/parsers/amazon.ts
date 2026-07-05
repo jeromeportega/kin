@@ -3,8 +3,47 @@ import { sha256Hex } from '../../../idempotency/keys';
 import { parseAmountToCents, toIsoDate } from '../../../normalize';
 import type { ParsedEmailMessage, RetailerEmailParser } from '../types';
 
-/** Cap HTML before regex to guard against ReDoS on malformed input. */
-const MAX_HTML_BYTES = 2 * 1024 * 1024;
+/** Cap HTML before scanning. Real Amazon receipt emails are well under 300 KB;
+ *  the cap bounds work on adversarial input (a From-spoofed email could carry a
+ *  giant body). Item-row extraction is a linear scan (see extractTagBlocks), so
+ *  even at the cap it can't be driven into catastrophic backtracking. */
+const MAX_HTML_BYTES = 512 * 1024;
+
+/** Cap on extracted rows/cells so a pathological table can't spray the item list. */
+const MAX_BLOCKS = 2000;
+
+/**
+ * Extract the inner content of each `<tag>…</tag>` block by a LINEAR indexOf
+ * scan. A regex like `/<tr>([\s\S]*?)<\/tr>/g` is O(n²) on unclosed tags — a
+ * ReDoS vector on attacker-controlled email HTML (measured ~100s on a 1.8 MB
+ * flood). This scan is O(n): each indexOf advances past what it consumed. Tag
+ * matching is name-exact (so `<tr>` doesn't match `<track>`). Not nesting-aware
+ * (parity with the prior regex); the reconciliation guard backstops gross errors.
+ */
+function extractTagBlocks(html: string, tag: string): string[] {
+  const lower = html.toLowerCase();
+  const open = `<${tag}`;
+  const close = `</${tag}>`;
+  const blocks: string[] = [];
+  let i = 0;
+  while (blocks.length < MAX_BLOCKS) {
+    let openIdx = lower.indexOf(open, i);
+    // Skip longer tag names that share the prefix (e.g. <track> for tag "tr").
+    while (openIdx !== -1) {
+      const after = lower[openIdx + open.length];
+      if (after === undefined || '> \t\r\n/'.includes(after)) break;
+      openIdx = lower.indexOf(open, openIdx + open.length);
+    }
+    if (openIdx === -1) break;
+    const gt = html.indexOf('>', openIdx);
+    if (gt === -1) break;
+    const closeIdx = lower.indexOf(close, gt + 1);
+    if (closeIdx === -1) break;
+    blocks.push(html.slice(gt + 1, closeIdx));
+    i = closeIdx + close.length;
+  }
+  return blocks;
+}
 
 /**
  * Match only the bare email address (not the display name) against amazon.com.
@@ -79,19 +118,8 @@ function parseItemsFromHtml(html: string): RawItem[] {
   const safe = html.length > MAX_HTML_BYTES ? html.slice(0, MAX_HTML_BYTES) : html;
   const items: RawItem[] = [];
 
-  // Match each <tr>...</tr> block
-  const rowRe = /<tr[^>]{0,500}>([\s\S]*?)<\/tr>/gi;
-  let rowMatch: RegExpExecArray | null;
-
-  while ((rowMatch = rowRe.exec(safe)) !== null) {
-    const rowContent = rowMatch[1]!;
-    // Match all <td>...</td> blocks within this row
-    const tdRe = /<td[^>]{0,500}>([\s\S]*?)<\/td>/gi;
-    const cells: string[] = [];
-    let tdMatch: RegExpExecArray | null;
-    while ((tdMatch = tdRe.exec(rowContent)) !== null) {
-      cells.push(innerText(tdMatch[1]!));
-    }
+  for (const rowContent of extractTagBlocks(safe, 'tr')) {
+    const cells = extractTagBlocks(rowContent, 'td').map(innerText);
 
     if (cells.length < 2) continue;
 
@@ -212,8 +240,11 @@ function parseSubtotal(text: string): number | undefined {
 
 export const amazonEmailParser: RetailerEmailParser = {
   retailer: 'amazon',
+  // Only order confirmations + refunds — NOT shipment ("shipped"/ship-confirm)
+  // emails, which this parser does not model (they'd be mis-scraped as partial
+  // orders). Add them back when a shipment parser exists.
   gmailQuery:
-    'from:(auto-confirm@amazon.com OR ship-confirm@amazon.com OR returns@amazon.com OR return@amazon.com) subject:(order OR refund OR return OR shipped)',
+    'from:(auto-confirm@amazon.com OR returns@amazon.com OR return@amazon.com) subject:(order OR refund OR return)',
 
   matches(msg: ParsedEmailMessage): boolean {
     return AMAZON_DOMAIN_RE.test(extractFromAddress(msg.from));
@@ -248,7 +279,12 @@ export const amazonEmailParser: RetailerEmailParser = {
     // otherwise the unreturned items are double-counted under a distinct
     // shipmentId (avoids the double-book bug).
     const isReturnEmail = /refund|return/i.test(msg.subject);
-    const shipmentId = isReturnEmail ? 'return' : 'confirmation';
+    // Scope shipmentId to the Gmail message id. The DB dedup key is
+    // (orderId, shipmentId, itemSeq) — WITHOUT sourceRowHash — so a bare
+    // 'return'/'confirmation' collides across distinct emails for the same order
+    // (e.g. two partial refunds), silently dropping the second. The messageId
+    // keeps distinct emails distinct while staying idempotent on re-fetch.
+    const shipmentId = `${isReturnEmail ? 'return' : 'confirmation'}:${msg.messageId}`;
     const bookable = isReturnEmail ? rawItems.filter((r) => r.isReturn) : rawItems;
 
     if (bookable.length === 0) {
@@ -263,6 +299,16 @@ export const amazonEmailParser: RetailerEmailParser = {
     // corrupt reconciliation and the store-credit ledger. Falls back to a
     // "must not exceed order total" check when no subtotal line is present.
     if (!isReturnEmail) {
+      // A purchase confirmation has no negative line items. A negative bookable
+      // line means a payment/discount row (gift card, promo, "your savings")
+      // slipped past the summary denylist — booking it would create a phantom
+      // store-credit "return". Skip fail-closed. (This closes the direction the
+      // sum-based guard below can't see: a negative leak pushes the sum DOWN.)
+      if (bookable.some((r) => r.amountCents < 0)) {
+        throw new Error(
+          `Amazon email ${externalOrderId}: unexpected negative line item in a purchase confirmation — skipping (likely a leaked payment/discount row)`,
+        );
+      }
       const purchaseSum = bookable.reduce((sum, r) => sum + r.amountCents, 0);
       const subtotal = parseSubtotal(stripped);
       if (subtotal !== undefined && purchaseSum !== subtotal) {

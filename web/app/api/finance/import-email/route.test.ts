@@ -21,10 +21,12 @@ const h = vi.hoisted(() => ({
 vi.mock("next/cache", () => ({ revalidatePath: h.revalidatePath }))
 vi.mock("@/auth", () => ({ auth: h.auth }))
 vi.mock("@/lib/tokenStore", () => ({ readRefreshToken: h.readRefreshToken }))
-vi.mock("@/lib/gmail", () => ({
-  mintAccessToken: h.mintAccessToken,
-  fetchRawMessages: h.fetchRawMessages,
-}))
+// Partial mock: stub the network seams but keep the REAL ReauthRequired class so
+// the route's `err instanceof ReauthRequired` check works (and is testable).
+vi.mock("@/lib/gmail", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/gmail")>()
+  return { ...actual, mintAccessToken: h.mintAccessToken, fetchRawMessages: h.fetchRawMessages }
+})
 vi.mock("@/lib/finance/server", () => ({
   resolveHouseholdScope: h.resolveHouseholdScope,
   reconcileHousehold: h.reconcileHousehold,
@@ -42,6 +44,7 @@ import { POST } from "@/app/api/finance/import-email/route"
 import { createTestDb } from "@/lib/finance/db/client"
 import { households, orderItems, orders } from "@/lib/finance/db/schema"
 import type { FinanceDb } from "@/lib/finance/db/client"
+import { ReauthRequired } from "@/lib/gmail"
 
 // ── fixtures ──────────────────────────────────────────────────────────────
 const FIXTURES = join(
@@ -121,6 +124,25 @@ describe("POST /api/finance/import-email — no Gmail token", () => {
     expect(await res.json()).toEqual({ ok: true, connected: false })
     expect(h.fetchRawMessages).not.toHaveBeenCalled()
     expect(h.reconcileHousehold).not.toHaveBeenCalled()
+  })
+})
+
+// ── Revoked / expired token ───────────────────────────────────────────────
+describe("POST /api/finance/import-email — revoked Gmail token", () => {
+  it("maps ReauthRequired to 200 connected:false (reconnect), not a 500", async () => {
+    h.mintAccessToken.mockRejectedValueOnce(new ReauthRequired("token refresh failed: 400"))
+    const res = await post()
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ ok: true, connected: false })
+    expect(h.fetchRawMessages).not.toHaveBeenCalled()
+    expect(h.reconcileHousehold).not.toHaveBeenCalled()
+  })
+
+  it("does NOT swallow other errors — a Gmail fetch failure surfaces as 500", async () => {
+    h.fetchRawMessages.mockRejectedValueOnce(new Error("Gmail list failed: 503"))
+    const res = await post()
+    expect(res.status).toBe(500)
+    expect(await res.json()).toMatchObject({ ok: false })
   })
 })
 

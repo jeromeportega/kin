@@ -491,3 +491,76 @@ describe('emlAdapter.normalize() — reconciliation guard', () => {
     expect(batch.errors[0]!.reason).toMatch(/subtotal|reconcile/i);
   });
 });
+
+// ---------------------------------------------------------------------------
+// B1 residual: a NEGATIVE line in a purchase confirmation (a payment/discount
+// row that slips the label denylist, e.g. bare "Gift Card") must be rejected —
+// never booked as a phantom store-credit "return".
+// ---------------------------------------------------------------------------
+
+function htmlEmail(orderId: string, subject: string, body: string): RawInput {
+  const raw = [
+    'From: auto-confirm@amazon.com',
+    `Subject: ${subject}`,
+    'Content-Type: text/html; charset=utf-8',
+    '',
+    body,
+  ].join('\r\n');
+  return { kind: 'eml', filename: `inline-${orderId}`, bytes: new TextEncoder().encode(raw) };
+}
+
+describe('emlAdapter.normalize() — negative line in a confirmation is rejected (B1 residual)', () => {
+  it('skips a confirmation with a leaked bare "Gift Card -$5.00" row — not booked as a gift_card return', () => {
+    const batch = normalizeSync(
+      htmlEmail(
+        '113-1111111-1111111',
+        'Your Amazon.com order (#113-1111111-1111111)',
+        `<p>Order #113-1111111-1111111</p><p>Order Date: January 8, 2026</p>
+         <table>
+           <tr><td>USB-C Cable</td><td>$13.99</td></tr>
+           <tr><td>Gift Card</td><td>-$5.00</td></tr>
+         </table>
+         <p>Order Total: $8.99</p>`,
+      ),
+    );
+    expect(batch.orders).toHaveLength(0);
+    expect(batch.errors).toHaveLength(1);
+    expect(batch.errors[0]!.reason).toMatch(/negative/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Partial-refund dedup: shipmentId is scoped to the Gmail message id so two
+// distinct refund emails for the SAME order don't collide on
+// (orderId, shipmentId, itemSeq) and silently drop the second.
+// ---------------------------------------------------------------------------
+
+describe('shipmentId is scoped to the Gmail message id', () => {
+  it('distinct messages for the same order produce distinct shipmentIds', () => {
+    const a = normalizeSync(emlInput('amazon-return.eml', 'gmail-msg-A')).orders[0]!;
+    const b = normalizeSync(emlInput('amazon-return.eml', 'gmail-msg-B')).orders[0]!;
+    expect(a.items[0]!.shipmentId).toContain('gmail-msg-A');
+    expect(b.items[0]!.shipmentId).toContain('gmail-msg-B');
+    expect(a.items[0]!.shipmentId).not.toBe(b.items[0]!.shipmentId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ReDoS guard: item extraction is linear, so a large body of unclosed <tr> tags
+// (which drove the old regex to ~100s) completes fast (the 5s test timeout is
+// the real assertion).
+// ---------------------------------------------------------------------------
+
+describe('parseItemsFromHtml is linear — no ReDoS on unclosed tags', () => {
+  it('completes quickly on ~400KB of unclosed <tr> tags', () => {
+    const flood = '<tr>'.repeat(100_000);
+    const batch = normalizeSync(
+      htmlEmail(
+        '113-2222222-2222222',
+        'Your Amazon.com order (#113-2222222-2222222)',
+        `<p>Order #113-2222222-2222222</p><p>Order Date: January 9, 2026</p>${flood}`,
+      ),
+    );
+    expect(batch.orders).toHaveLength(0);
+  });
+});
