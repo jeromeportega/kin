@@ -1,0 +1,22 @@
+MIME-Version: 1.0
+Date: Mon, 12 Jan 2026 11:00:00 +0000
+From: help@walmart.com
+To: customer@example.com
+Subject: Your Walmart refund has been issued
+Message-ID: <WMT-RETURN-001@walmart.com>
+Content-Type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html>
+<body>
+<h1>Your refund is on the way</h1>
+<p>Order# 2000123-45678901</p>
+<p>Order date: January 10, 2026</p>
+<table>
+  <tr><th>Item</th><th>Refund method</th><th>Amount</th></tr>
+  <tr><td>Great Value Milk, 1 gal</td><td>Visa ending 1234</td><td>$3.24</td></tr>
+  <tr><td>Great Value Milk (Returned)</td><td>Visa ending 1234</td><td>-$3.24</td></tr>
+</table>
+<p>Refund Total: $3.24</p>
+</body>
+</html>

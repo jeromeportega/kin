@@ -39,7 +39,7 @@ export interface NormalizedOrderItem {
 }
 
 export interface NormalizedOrder {
-  source: 'amazon';
+  source: 'amazon' | 'walmart';
   externalOrderId: string;
   /** ISO `YYYY-MM-DD`. */
   orderDate: string;
