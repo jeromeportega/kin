@@ -16,6 +16,12 @@ function emlInput(name: string, messageId = `test-${name}`): RawInput {
 function normalizeSync(input: RawInput): NormalizedBatch {
   return emlAdapter.normalize(input) as NormalizedBatch;
 }
+function htmlEmail(subject: string, body: string, from = 'help@walmart.com', messageId = 'wmt-inline'): RawInput {
+  const raw = [`From: ${from}`, `Subject: ${subject}`, 'Content-Type: text/html; charset=utf-8', '', body].join(
+    '\r\n',
+  );
+  return { kind: 'eml', filename: messageId, bytes: new TextEncoder().encode(raw) };
+}
 
 describe('walmart parser — order confirmation', () => {
   function getOrder() {
@@ -83,5 +89,62 @@ describe('dispatch seam routes by sender', () => {
     const q = emlGmailQuery();
     expect(q).toContain('amazon.com');
     expect(q).toContain('walmart.com');
+  });
+});
+
+describe('walmart parser — hardening (review fixes)', () => {
+  it('does NOT claim a shipment/delivery notice (avoids double-booking re-listed items)', () => {
+    const batch = normalizeSync(
+      htmlEmail(
+        'Great news — your order has shipped!',
+        `<p>Order# 2000123-45678901</p><p>Order date: January 10, 2026</p>
+         <table>
+           <tr><td>Great Value Milk, 1 gal</td><td>$3.24</td></tr>
+           <tr><td>Bananas, each</td><td>$1.48</td></tr>
+         </table>`,
+        'help@walmart.com',
+        'wmt-ship-1',
+      ),
+    );
+    expect(batch.orders).toHaveLength(0);
+    expect(batch.errors).toHaveLength(1);
+    expect(batch.errors[0]!.reason).toMatch(/no retailer parser/i);
+  });
+
+  it('anchors the order id to the Order# label — a tracking number does not hijack it', () => {
+    const batch = normalizeSync(
+      htmlEmail(
+        'Your Walmart order confirmation',
+        `<p>Tracking# 612909001234567</p><p>Order# 2000123-45678901</p>
+         <p>Order date: January 10, 2026</p>
+         <table>
+           <tr><td>Great Value Milk, 1 gal</td><td>$3.24</td></tr>
+           <tr><td>Subtotal</td><td>$3.24</td></tr>
+         </table>
+         <p>Subtotal: $3.24</p>`,
+        'help@walmart.com',
+        'wmt-track-1',
+      ),
+    );
+    expect(batch.orders).toHaveLength(1);
+    expect(batch.orders[0]!.externalOrderId).toBe('2000123-45678901');
+  });
+
+  it('parses a slash-format order date', () => {
+    const batch = normalizeSync(
+      htmlEmail(
+        'Your Walmart order confirmation',
+        `<p>Order# 2000123-45678901</p><p>Order date: 1/10/2026</p>
+         <table>
+           <tr><td>Great Value Milk, 1 gal</td><td>$3.24</td></tr>
+           <tr><td>Subtotal</td><td>$3.24</td></tr>
+         </table>
+         <p>Subtotal: $3.24</p>`,
+        'help@walmart.com',
+        'wmt-slashdate-1',
+      ),
+    );
+    expect(batch.orders).toHaveLength(1);
+    expect(batch.orders[0]!.orderDate).toBe('2026-01-10');
   });
 });

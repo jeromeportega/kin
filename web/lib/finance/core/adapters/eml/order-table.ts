@@ -2,7 +2,7 @@ import type { NormalizedOrder, NormalizedOrderItem, RefundDestination } from '..
 import { sha256Hex } from '../../idempotency/keys';
 import { parseAmountToCents, toIsoDate } from '../../normalize';
 import type { ParsedEmailMessage } from './types';
-import { extractTagBlocks, innerText, stripHtml } from './html';
+import { extractTagBlocks, innerText, stripHtml, MAX_HTML_BYTES } from './html';
 
 /**
  * Retailer-agnostic parsing for order/receipt emails that render items in an
@@ -52,9 +52,10 @@ export function extractFromAddress(from: string): string {
  * ($X.XX / -$X.XX / ($X.XX)). Summary/payment/header rows are rejected.
  */
 function parseItemsFromHtml(html: string): RawItem[] {
+  const safe = html.length > MAX_HTML_BYTES ? html.slice(0, MAX_HTML_BYTES) : html;
   const items: RawItem[] = [];
 
-  for (const rowContent of extractTagBlocks(html, 'tr')) {
+  for (const rowContent of extractTagBlocks(safe, 'tr')) {
     const cells = extractTagBlocks(rowContent, 'td').map(innerText);
     if (cells.length < 2) continue;
 
