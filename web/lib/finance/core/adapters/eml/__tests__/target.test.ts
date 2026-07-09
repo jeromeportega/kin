@@ -67,18 +67,36 @@ describe('target parser — refund', () => {
 });
 
 describe('target parser — hardening', () => {
-  it('does NOT claim a shipment/drive-up notice', () => {
+  // Every one of these carries a fully bookable re-listed item table; the guard
+  // must reject them by subject or they double-book against the confirmation.
+  it.each([
+    'Your Target order is ready for Drive Up',
+    'Thanks for picking up your order',
+    'Track your package',
+    "It's here! Your Target order",
+    'Delivery update for your Target order',
+    'Your order has shipped',
+    'Out for delivery',
+  ])('does NOT claim a shipment/pickup/tracking notice: %s', (subject) => {
     const batch = normalizeSync(
       htmlEmail(
-        'Your Target order is ready for Drive Up',
+        subject,
         `<p>Order# 3001234567890</p><p>Order date: January 15, 2026</p>
-         <table><tr><td>Good &amp; Gather Milk</td><td>$3.49</td></tr></table>`,
+         <table>
+           <tr><td>Good &amp; Gather Milk</td><td>$3.49</td></tr>
+           <tr><td>Market Pantry Eggs</td><td>$2.99</td></tr>
+         </table>`,
         'orders@oe.target.com',
-        'tgt-driveup-1',
+        'tgt-notice',
       ),
     );
     expect(batch.orders).toHaveLength(0);
     expect(batch.errors[0]!.reason).toMatch(/no retailer parser/i);
+  });
+
+  it('STILL claims a genuine confirmation and refund subject', () => {
+    expect(normalizeSync(emlInput('target-order.eml', 'c1')).orders).toHaveLength(1);
+    expect(normalizeSync(emlInput('target-return.eml', 'r1')).orders).toHaveLength(1);
   });
 
   it('anchors the order id — a tracking number does not hijack it', () => {

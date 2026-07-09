@@ -56,7 +56,7 @@ export function extractFromAddress(from: string): string {
  * `matches()`. (Amazon instead disambiguates by sender address.)
  */
 const SHIPMENT_SUBJECT_RE =
-  /shipp(ed|ing)|on (its|the) way|out for delivery|delivered|ready for (pickup|drive[\s-]?up|collection)|arriv|tracking/i;
+  /shipp(ed|ing)|on (its|the) way|out for delivery|delivered|delivery\s+(update|notification|status)|ready for (pickup|drive[\s-]?up|collection)|pick(ed|ing)\s*up|\btrack\b|tracking|arriv|it'?s here/i;
 
 export function isShipmentNotice(subject: string): boolean {
   return SHIPMENT_SUBJECT_RE.test(subject);
