@@ -1,6 +1,6 @@
 import type { NormalizedOrder } from '../../../model/normalized';
 import type { ParsedEmailMessage, RetailerEmailParser } from '../types';
-import { buildTabularOrder, extractFromAddress } from '../order-table';
+import { buildTabularOrder, extractFromAddress, isShipmentNotice } from '../order-table';
 
 /**
  * Walmart order-confirmation / refund email parser. Reuses the shared tabular
@@ -24,22 +24,16 @@ const WALMART_DOMAIN_RE = /^[\w.+\-]+@([\w\-]+\.)?walmart\.com$/i;
 // the order id (which would book items under a corrupt external identity).
 const WALMART_ORDER_ID_RE = /order\s*#?\s*:?\s*(\d{7}-\d{7,8}|\d{13,17})\b/i;
 
-// Walmart's shared sender (help@walmart.com) also sends shipment / delivery /
-// pickup notices that RE-LIST the ordered items with no reconcilable subtotal.
-// Booking those would double-count against the confirmation, and no parse guard
-// can see it (the email is internally consistent) — so reject them by subject
-// here (not only in the Gmail query, since .eml can arrive via other paths).
-const WALMART_NON_ORDER_SUBJECT_RE =
-  /shipp(ed|ing)|on (its|the) way|out for delivery|delivered|ready for (pickup|collection)|arriv|tracking/i;
-
 export const walmartEmailParser: RetailerEmailParser = {
   retailer: 'walmart',
   gmailQuery:
     'from:(help@walmart.com OR no-reply@walmart.com OR noreply@walmart.com OR orders@walmart.com) subject:(order OR receipt OR refund OR return) -subject:(shipped OR shipping OR delivered OR tracking OR "out for delivery" OR "on its way")',
 
   matches(msg: ParsedEmailMessage): boolean {
+    // help@walmart.com also sends shipment/delivery notices that re-list items —
+    // reject those (shared guard) so they don't double-book against the confirmation.
     if (!WALMART_DOMAIN_RE.test(extractFromAddress(msg.from))) return false;
-    if (WALMART_NON_ORDER_SUBJECT_RE.test(msg.subject)) return false;
+    if (isShipmentNotice(msg.subject)) return false;
     return true;
   },
 

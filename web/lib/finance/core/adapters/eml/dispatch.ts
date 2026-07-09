@@ -1,9 +1,10 @@
 import type { ParsedEmailMessage, RetailerEmailParser } from './types';
 import { amazonEmailParser } from './parsers/amazon';
 import { walmartEmailParser } from './parsers/walmart';
+import { targetEmailParser } from './parsers/target';
 
 /** All registered retailer parsers. Adding a new retailer = append here only. */
-const PARSERS: RetailerEmailParser[] = [amazonEmailParser, walmartEmailParser];
+const PARSERS: RetailerEmailParser[] = [amazonEmailParser, walmartEmailParser, targetEmailParser];
 
 /**
  * Return the first parser that claims the message, or `null` if no parser matches.

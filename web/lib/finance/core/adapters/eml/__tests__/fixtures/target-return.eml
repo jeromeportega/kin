@@ -1,0 +1,22 @@
+MIME-Version: 1.0
+Date: Sat, 17 Jan 2026 10:00:00 +0000
+From: orders@oe.target.com
+To: customer@example.com
+Subject: Your Target refund has been issued
+Message-ID: <TGT-RETURN-001@target.com>
+Content-Type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html>
+<body>
+<h1>Your refund is on the way</h1>
+<p>Order# 3001234567890</p>
+<p>Order date: January 15, 2026</p>
+<table>
+  <tr><th>Item</th><th>Refund method</th><th>Amount</th></tr>
+  <tr><td>Good &amp; Gather Milk, 1 gal</td><td>Visa ending 4321</td><td>$3.49</td></tr>
+  <tr><td>Good &amp; Gather Milk (Returned)</td><td>Visa ending 4321</td><td>-$3.49</td></tr>
+</table>
+<p>Refund Total: $3.49</p>
+</body>
+</html>
