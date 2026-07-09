@@ -1,0 +1,27 @@
+MIME-Version: 1.0
+Date: Thu, 15 Jan 2026 08:00:00 +0000
+From: orders@oe.target.com
+To: customer@example.com
+Subject: Your Target order confirmation
+Message-ID: <TGT-CONFIRM-001@target.com>
+Content-Type: text/html; charset=utf-8
+
+<!DOCTYPE html>
+<html>
+<body>
+<h1>Thanks for your order</h1>
+<p>Order# 3001234567890</p>
+<p>Order date: January 15, 2026</p>
+<table>
+  <tr><th>Item</th><th>Qty</th><th>Price</th></tr>
+  <tr><td>Good &amp; Gather Milk, 1 gal</td><td>Qty: 1</td><td>$3.49</td></tr>
+  <tr><td>Market Pantry Eggs, dozen</td><td>Qty: 1</td><td>$2.99</td></tr>
+  <tr><td>Subtotal</td><td>$6.48</td></tr>
+  <tr><td>Shipping</td><td>$0.00</td></tr>
+  <tr><td>Tax</td><td>$0.45</td></tr>
+  <tr><td>Order Total</td><td>$6.93</td></tr>
+</table>
+<p>Subtotal: $6.48</p>
+<p>Order Total: $6.93</p>
+</body>
+</html>
