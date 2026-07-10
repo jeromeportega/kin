@@ -9,6 +9,7 @@ import { LiveAnthropicVisionProvider } from "../core/receipts/vision/live-anthro
 import type { SupportedMimeType } from "../core/receipts/vision/vision-provider"
 import { LibSqlReceiptStore } from "../core/receipts/store/libsql-receipt-store"
 import { schema as receiptStoreSchema } from "../core/receipts/store/h1-schema"
+import { HouseholdScopedReceiptStore } from "./scoped-store"
 import { LibSqlSkuDictionary } from "../core/receipts/dictionary/libsql-sku-dictionary"
 import { schema as dictSchema } from "../core/receipts/dictionary/schema"
 import { LlmSkuResolver, AnthropicSkuResolver } from "../core/receipts/resolver/llm-resolver"
@@ -28,14 +29,17 @@ export function receiptScanConfigured(): boolean {
 
 /** kin's shared libSQL client — Turso in prod, the local SQLite file in dev.
  *  Mirrors createDb()'s resolution; the receipt store/dictionary need a
- *  schema-typed drizzle instance, which createDb() (schema-less) doesn't give. */
+ *  schema-typed drizzle instance, which createDb() (schema-less) doesn't give.
+ *  Memoized (like the finance server's db()) so scans don't leak a file handle. */
+let _client: ReturnType<typeof createClient> | undefined
 function sharedClient() {
+  if (_client) return _client
   const tursoUrl = process.env.TURSO_DATABASE_URL
-  if (tursoUrl) {
-    return createClient({ url: tursoUrl, authToken: process.env.TURSO_AUTH_TOKEN })
-  }
   const file = process.env.KIN_DB_PATH ?? join(process.cwd(), "..", "data", "kin.sqlite")
-  return createClient({ url: `file:${file}` })
+  _client = tursoUrl
+    ? createClient({ url: tursoUrl, authToken: process.env.TURSO_AUTH_TOKEN })
+    : createClient({ url: `file:${file}` })
+  return _client
 }
 
 export interface ScanReceiptResult {
@@ -72,7 +76,7 @@ export async function scanReceipt(
         confidenceThreshold: DEFAULT_RECEIPT_CONFIG.confidenceThreshold,
       }),
       dictionary,
-      store: new LibSqlReceiptStore(storeDb),
+      store: new HouseholdScopedReceiptStore(new LibSqlReceiptStore(storeDb), scope.householdId),
       householdId: scope.householdId,
       source: "photo",
     },

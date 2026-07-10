@@ -5,6 +5,10 @@ import { resolveHouseholdScope } from "@/lib/finance/server"
 import { scanReceipt, receiptScanConfigured } from "@/lib/finance/receipts/server"
 import { isSupportedMimeType } from "@/lib/finance/core/receipts/vision/vision-provider"
 
+// A receipt photo/PDF is well under this; the cap bounds an oversized upload
+// before it becomes base64 + an LLM request. (Vercel also caps the body ~4.5MB.)
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
 /** POST /api/finance/receipts/scan — multipart { file }. Runs a receipt photo /
  *  PDF through Claude vision → item-level receipt in the signed-in household. */
 export async function POST(request: Request): Promise<Response> {
@@ -27,6 +31,9 @@ export async function POST(request: Request): Promise<Response> {
       { status: 400 },
     )
   }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return Response.json({ error: "File too large (max 10 MB)." }, { status: 413 })
+  }
 
   const scope = await resolveHouseholdScope(session.user.email)
   try {
@@ -35,6 +42,8 @@ export async function POST(request: Request): Promise<Response> {
     revalidatePath("/finance")
     return Response.json({ ok: true, ...result })
   } catch (err) {
-    return Response.json({ ok: false, error: String(err) }, { status: 500 })
+    // Don't leak provider/DB internals to the client; log server-side.
+    console.error("receipt scan failed:", err)
+    return Response.json({ ok: false, error: "Receipt scan failed. Please try again." }, { status: 500 })
   }
 }

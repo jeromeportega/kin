@@ -9,6 +9,7 @@ import { LibSqlReceiptStore } from "../core/receipts/store/libsql-receipt-store"
 import { schema as storeSchema } from "../core/receipts/store/h1-schema"
 import { LibSqlSkuDictionary } from "../core/receipts/dictionary/libsql-sku-dictionary"
 import { schema as dictSchema } from "../core/receipts/dictionary/schema"
+import { HouseholdScopedReceiptStore } from "./scoped-store"
 
 // Proves the receipt-vision pipeline's DB seams (clarity's LibSqlReceiptStore /
 // LibSqlSkuDictionary, which use their OWN drizzle table defs) actually read and
@@ -84,6 +85,31 @@ describe("receipt store/dictionary ↔ kin's migrated schema", () => {
     // Idempotency seam the pipeline relies on.
     expect(await store.findReceiptByImageHash("sha-costco-1")).not.toBeNull()
     expect(await store.findReceiptByImageHash("nope")).toBeNull()
+  })
+
+  it("scopes image-hash idempotency to the household (no cross-tenant collision)", async () => {
+    const raw = new LibSqlReceiptStore(storeDb)
+    // Household A scans a receipt with a given image hash.
+    await raw.insertReceipt({
+      householdId: HH,
+      source: "photo",
+      store: "Costco",
+      purchasedAt: "2026-05-16",
+      subtotalCents: 100,
+      taxCents: 0,
+      totalCents: 100,
+      paymentLast4: null,
+      imageHash: "shared-hash",
+      needsReview: false,
+    })
+    const HH_B = "hh-receipt-wire-B"
+    await handle.db.insert(households).values({ id: HH_B, name: "other" })
+
+    // The unscoped store leaks across households (the bug the wrapper fixes)…
+    expect(await raw.findReceiptByImageHash("shared-hash")).not.toBeNull()
+    // …the household-scoped wrapper isolates it: A finds its receipt, B does not.
+    expect(await new HouseholdScopedReceiptStore(raw, HH).findReceiptByImageHash("shared-hash")).not.toBeNull()
+    expect(await new HouseholdScopedReceiptStore(raw, HH_B).findReceiptByImageHash("shared-hash")).toBeNull()
   })
 
   it("LibSqlSkuDictionary upsert + lookup round-trips against kin's sku_dictionary", async () => {
