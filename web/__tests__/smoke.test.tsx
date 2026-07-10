@@ -54,6 +54,7 @@ describe("env documentation", () => {
       "PLAID_CLIENT_ID",
       "PLAID_SECRET",
       "PLAID_ENV",
+      "ANTHROPIC_API_KEY",
       "KIN_DEMO_USER",
     ]) {
       expect(envExample, `${key} missing from .env.example`).toContain(key);

@@ -4,10 +4,12 @@ import { resolveHouseholdScope, fetchQueue } from "@/lib/finance/server"
 import { DEFAULT_CATEGORIES } from "@/lib/finance/db/schema"
 import { plaidConfigured } from "@/lib/finance/plaid/client"
 import { hasPlaidItem } from "@/lib/finance/plaid/server"
+import { receiptScanConfigured } from "@/lib/finance/receipts/server"
 import { QueueView } from "@/components/finance/queue/QueueView"
 import { QueueItemActions } from "@/components/finance/queue/QueueItemActions"
 import { FinanceUpload } from "@/components/finance/FinanceUpload"
 import { PlaidConnect } from "@/components/finance/PlaidConnect"
+import { ReceiptScan } from "@/components/finance/ReceiptScan"
 import { EmailReceiptImport } from "./EmailReceiptImport"
 
 export const dynamic = "force-dynamic"
@@ -19,6 +21,7 @@ export default async function FinancePage() {
   const scope = await resolveHouseholdScope(session.user.email)
   const plaidEnabled = plaidConfigured()
   const hasBank = plaidEnabled ? await hasPlaidItem(scope) : false
+  const receiptScanEnabled = receiptScanConfigured()
   const items = await fetchQueue(scope)
 
   return (
@@ -33,6 +36,7 @@ export default async function FinancePage() {
       {plaidEnabled && <PlaidConnect hasBank={hasBank} />}
       <FinanceUpload />
       <EmailReceiptImport />
+      {receiptScanEnabled && <ReceiptScan />}
       <QueueView
         items={items}
         renderActions={(item) => <QueueItemActions item={item} categories={[...DEFAULT_CATEGORIES]} />}
